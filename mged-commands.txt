@@ -1,3 +1,0 @@
-units mm
-in mySphere sph 0 0 0 10.0
-quit
