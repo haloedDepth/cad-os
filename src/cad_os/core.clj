@@ -10,23 +10,25 @@
   (println "DEBUG: f =" f)
   (println "DEBUG: args =" args)
   (let [result (apply f args)
-        joined (s/join ";" result)
-        quoted (str "'" joined "'")]
-    (println "DEBUG: Running:" mged-path "-c" (str name ".g") quoted)
-    ;; Use -c flag to execute commands with the joined string in single quotes
-    (sh mged-path "-c" (str name ".g") quoted)))
+        joined (s/join ";" result)]
+    (println "DEBUG: result =" result)
+    (println "DEBUG: joined =" joined)
+    (println "DEBUG: Running:" mged-path "-c" (str name ".g") joined)
+    (let [shell-result (sh mged-path "-c" (str name ".g") joined)]
+      (println "DEBUG: shell-result:" shell-result)
+      shell-result)))
 
 
 (defn washer
-  [inner-diameter outer-diameter thickness]
+  [outer-diameter inner-diameter thickness]
   [(commands/insert-right-circular-cylinder "outer" 0 0 0 0 0 thickness (/ outer-diameter 2))
    (commands/insert-right-circular-cylinder "inner" 0 0 0 0 0 thickness (/ inner-diameter 2))
    (commands/subtraction "washer" "outer" "inner")])
 
-(println "DEBUG: Testing washer function directly:")
-(let [washer-result (washer 10 5 2)]
-  (println "DEBUG: washer result =" washer-result))
-
-(println "DEBUG: Now trying create-g:")
-(create-g "washer" washer 10 5 2)
-
+;; Define a -main function as the program's entry point.
+(defn -main [& args]
+  (println "DEBUG: Testing washer function directly:")
+  (let [washer-result (washer 10 6 2)]
+    (println "DEBUG: washer result =" washer-result))
+  (println "DEBUG: Now trying create-g:")
+  (create-g "washer" washer 10 6 2))
