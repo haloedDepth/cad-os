@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAD-OS Parametric Modeling</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <style>
+    [x-cloak] { display: none !important; }
+    body { margin: 0; }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-radius: 50%;
+      border-top: 4px solid #3498db;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+  
+  <!-- Three.js -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.173.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.173.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-100">
+  <div id="app" class="flex flex-col h-screen">
+    <!-- Header -->
+    <header class="bg-blue-600 text-white p-4">
+      <h1 class="text-2xl font-bold">CAD-OS Parametric Modeling</h1>
+    </header>
+    
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Parameter Panel -->
+      <div class="w-80 bg-white p-4 shadow-md overflow-y-auto">
+        <h2 class="text-xl font-semibold mb-4">Washer Parameters</h2>
+        
+        <!-- Washer Parameters -->
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Outer Diameter</label>
+            <input type="number" id="outerDiameter" value="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Inner Diameter</label>
+            <input type="number" id="innerDiameter" value="6" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Thickness</label>
+            <input type="number" id="thickness" value="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+          </div>
+          
+          <button 
+            id="generateButton"
+            class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+          >
+            <span id="buttonText">Generate Model</span>
+            <div id="loader" style="display: none;" class="flex items-center justify-center">
+              <div class="loader mr-2"></div>
+              Processing...
+            </div>
+          </button>
+        </div>
+        
+        <!-- Status Message -->
+        <div id="statusContainer" style="display: none;" class="mt-4 p-3 rounded">
+          <p id="statusMessage"></p>
+        </div>
+      </div>
+      
+      <!-- Model Viewer -->
+      <div class="flex-1 relative">
+        <div id="viewer" class="w-full h-full"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- App JavaScript -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+    
+    // DOM Elements
+    const outerDiameterInput = document.getElementById('outerDiameter');
+    const innerDiameterInput = document.getElementById('innerDiameter');
+    const thicknessInput = document.getElementById('thickness');
+    const generateButton = document.getElementById('generateButton');
+    const buttonText = document.getElementById('buttonText');
+    const loader = document.getElementById('loader');
+    const statusContainer = document.getElementById('statusContainer');
+    const statusMessage = document.getElementById('statusMessage');
+    
+    // Three.js variables
+    let renderer, scene, camera, controls, currentModel;
+    
+    // Initialize the viewer
+    function initViewer() {
+      // Create renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(
+        document.getElementById('viewer').clientWidth,
+        document.getElementById('viewer').clientHeight
+      );
+      document.getElementById('viewer').appendChild(renderer.domElement);
+      
+      // Create scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf0f0f0);
+      
+      // Create camera
+      camera = new THREE.PerspectiveCamera(
+        45,
+        document.getElementById('viewer').clientWidth / document.getElementById('viewer').clientHeight,
+        1,
+        10000
+      );
+      camera.position.set(0, 20, 100);
+      
+      // Set up OrbitControls
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.update();
+      
+      // Add lights
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+      scene.add(ambientLight);
+      
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+      directionalLight.position.set(1, 1, 1);
+      scene.add(directionalLight);
+      
+      // Add grid helper
+      const gridHelper = new THREE.GridHelper(100, 10);
+      scene.add(gridHelper);
+      
+      // Animation loop
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+      
+      // Handle window resize
+      window.addEventListener('resize', handleResize);
+    }
+    
+    function handleResize() {
+      if (camera && renderer) {
+        camera.aspect = document.getElementById('viewer').clientWidth / document.getElementById('viewer').clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(
+          document.getElementById('viewer').clientWidth,
+          document.getElementById('viewer').clientHeight
+        );
+      }
+    }
+    
+    async function generateModel() {
+      // Show loading state
+      buttonText.style.display = 'none';
+      loader.style.display = 'flex';
+      generateButton.disabled = true;
+      statusContainer.style.display = 'none';
+      
+      try {
+        const params = {
+          outer_diameter: outerDiameterInput.value.toString(),
+          inner_diameter: innerDiameterInput.value.toString(),
+          thickness: thicknessInput.value.toString()
+        };
+        
+        console.log('Generating model with parameters:', params);
+        
+        // Call the API to generate the model
+        const response = await fetch('/api/generate/washer', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(params)
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to generate model: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log('Model generation response:', data);
+        
+        // Check if we have an obj_path or "obj-path" property (both formats)
+        const objPath = data.obj_path || data["obj-path"];
+        
+        if (objPath) {
+          console.log(`OBJ file path: ${objPath}`);
+          
+          // Add a small delay to ensure the file is ready
+          statusContainer.className = 'mt-4 p-3 rounded bg-yellow-100 text-yellow-700';
+          statusMessage.textContent = 'Model generated. Loading...';
+          statusContainer.style.display = 'block';
+          
+          setTimeout(() => {
+            try {
+              // Strip .obj extension if present
+              const fileName = objPath.replace(/\.obj$/i, '');
+              loadModel(fileName);
+              statusContainer.className = 'mt-4 p-3 rounded bg-green-100 text-green-700';
+              statusMessage.textContent = 'Model generated successfully!';
+            } catch (error) {
+              console.error('Error loading model:', error);
+              statusContainer.className = 'mt-4 p-3 rounded bg-red-100 text-red-700';
+              statusMessage.textContent = `Error loading model: ${error.message}`;
+            }
+          }, 1000); // 1 second delay
+        } else {
+          console.error('Response data:', data);
+          throw new Error('No OBJ file path returned from server');
+        }
+      } catch (error) {
+        console.error('Error generating model:', error);
+        statusContainer.className = 'mt-4 p-3 rounded bg-red-100 text-red-700';
+        statusMessage.textContent = `Error: ${error.message}`;
+        statusContainer.style.display = 'block';
+      } finally {
+        // Reset loading state
+        buttonText.style.display = 'inline';
+        loader.style.display = 'none';
+        generateButton.disabled = false;
+      }
+    }
+    
+    function loadModel(fileName) {
+      // Remove current model if exists
+      if (currentModel) {
+        scene.remove(currentModel);
+      }
+      
+      console.log(`Loading model from: /api/models/${fileName}`);
+      const loader = new OBJLoader();
+      
+      loader.load(
+        `/api/models/${fileName}`,
+        (obj) => {
+          console.log('OBJ loaded successfully:', obj);
+          
+          // Center the object
+          const box = new THREE.Box3().setFromObject(obj);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          
+          obj.position.sub(center);
+          
+          // Apply default material if needed
+          obj.traverse((child) => {
+            if (child.isMesh) {
+              console.log('Found mesh in loaded OBJ:', child);
+              if (!child.material) {
+                console.log('Applying default material to mesh');
+                child.material = new THREE.MeshStandardMaterial({
+                  color: 0x3498db,
+                  metalness: 0.2,
+                  roughness: 0.8
+                });
+              }
+            }
+          });
+          
+          currentModel = obj;
+          scene.add(obj);
+          
+          // Adjust camera to fit the object
+          const boxSize = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(boxSize.x, boxSize.y, boxSize.z);
+          const distance = maxDim * 2;
+          camera.position.set(distance, distance, distance);
+          camera.lookAt(0, 0, 0);
+          controls.update();
+          
+          console.log('Model added to scene and camera adjusted');
+        },
+        (xhr) => {
+          console.log((xhr.loaded / xhr.total) * 100 + '% loaded');
+        },
+        (error) => {
+          console.error('Error loading model:', error);
+          statusContainer.className = 'mt-4 p-3 rounded bg-red-100 text-red-700';
+          statusMessage.textContent = `Error loading model: ${error.message}`;
+          statusContainer.style.display = 'block';
+        }
+      );
+    }
+    
+    // Initialize the application
+    initViewer();
+    
+    // Add event listeners
+    generateButton.addEventListener('click', generateModel);
+  </script>
+</body>
+</html>
