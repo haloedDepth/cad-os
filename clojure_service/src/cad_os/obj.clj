@@ -3,6 +3,18 @@
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
+(defn wait-for-command-completion
+  "Wait for an external command to complete by checking for the existence of a file"
+  [file-path max-attempts delay-ms]
+  (loop [attempts 0]
+    (if (.exists (io/file file-path))
+      true
+      (if (>= attempts max-attempts)
+        false
+        (do
+          (Thread/sleep delay-ms)
+          (recur (inc attempts)))))))
+
 (defn convert-g-to-obj
   "Convert a .g file to .obj format using the g-obj command-line tool.
    
@@ -25,12 +37,12 @@
      - :output-file (string) - Output file name (-o)"
   ([file-path objects]
    (convert-g-to-obj file-path objects {}))
-  
+
   ([file-path objects options]
    (let [file-path (str/replace file-path #"\.g$" "")  ; Remove .g extension if present
          g-file (str file-path ".g")                   ; Add .g extension
          output-file (or (:output-file options) (str file-path ".obj"))
-         
+
          ; Build command arguments
          cmd-args (cond-> []
                     (:mesh options)         (conj "-m")
@@ -48,28 +60,27 @@
                     true                    (conj "-o" output-file)
                     true                    (conj g-file)
                     true                    (concat objects))
-                    
+
          ; Execute command
          _ (println "Executing:" (str/join " " (cons "g-obj" cmd-args)))
          result (apply sh "g-obj" cmd-args)]
-     
-     ; Return result
+
+     ; Wait for output file to exist
      (if (zero? (:exit result))
-       {:status "success"
-        :message (str "Created OBJ file: " output-file)
-        :output (:out result)
-        :file output-file}
+       (do
+         (println "Command completed successfully, waiting for OBJ file to be generated:" output-file)
+         (if (wait-for-command-completion output-file 30 200)
+           (do
+             (println "OBJ file confirmed to exist:" output-file)
+             {:status "success"
+              :message (str "Created OBJ file: " output-file)
+              :output (:out result)
+              :file output-file})
+           {:status "error"
+            :message (str "OBJ file was not created despite successful command execution: " output-file)
+            :output (:out result)
+            :error "File not found after timeout"}))
        {:status "error"
         :message (str "Failed to convert file: " g-file)
         :error (:err result)
         :exit-code (:exit result)}))))
-
-;; Example usage:
-;; (convert-g-to-obj "path/to/model" ["object1" "object2"])
-;; 
-;; With options:
-;; (convert-g-to-obj "path/to/model" ["object1" "object2"] 
-;;                   {:mesh true 
-;;                    :verbose true
-;;                    :abs-tess-tol 0.01
-;;                    :output-file "custom-output.obj"})

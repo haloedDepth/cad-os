@@ -210,18 +210,18 @@
         if (objPath) {
           console.log(`OBJ file path: ${objPath}`);
           
-          // Add a small delay to ensure the file is ready
+          // Show loading status
           statusContainer.className = 'mt-4 p-3 rounded bg-yellow-100 text-yellow-700';
           statusMessage.textContent = 'Model generated. Loading...';
           statusContainer.style.display = 'block';
           
+          // Important change: Use a small delay to let the API service have time to access the file
+          // from Clojure service before attempting to load it
           setTimeout(() => {
             try {
               // Strip .obj extension if present
               const fileName = objPath.replace(/\.obj$/i, '');
               loadModel(fileName);
-              statusContainer.className = 'mt-4 p-3 rounded bg-green-100 text-green-700';
-              statusMessage.textContent = 'Model generated successfully!';
             } catch (error) {
               console.error('Error loading model:', error);
               statusContainer.className = 'mt-4 p-3 rounded bg-red-100 text-red-700';
@@ -253,6 +253,19 @@
       
       console.log(`Loading model from: /api/models/${fileName}`);
       const loader = new OBJLoader();
+      
+      const handleLoadError = (error) => {
+        console.error('Error loading model:', error);
+        statusContainer.className = 'mt-4 p-3 rounded bg-red-100 text-red-700';
+        statusMessage.textContent = `Error loading model: ${error.message}`;
+        statusContainer.style.display = 'block';
+        
+        // Retry loading after a delay if it was a 404
+        if (error.message.includes('404') || error.message.includes('Not Found')) {
+          statusMessage.textContent = 'Model not ready yet. Retrying...';
+          setTimeout(() => loadModel(fileName), 2000);
+        }
+      };
       
       loader.load(
         `/api/models/${fileName}`,
@@ -293,16 +306,15 @@
           controls.update();
           
           console.log('Model added to scene and camera adjusted');
+          
+          // Update status
+          statusContainer.className = 'mt-4 p-3 rounded bg-green-100 text-green-700';
+          statusMessage.textContent = 'Model loaded successfully!';
         },
         (xhr) => {
           console.log((xhr.loaded / xhr.total) * 100 + '% loaded');
         },
-        (error) => {
-          console.error('Error loading model:', error);
-          statusContainer.className = 'mt-4 p-3 rounded bg-red-100 text-red-700';
-          statusMessage.textContent = `Error loading model: ${error.message}`;
-          statusContainer.style.display = 'block';
-        }
+        handleLoadError
       );
     }
     
