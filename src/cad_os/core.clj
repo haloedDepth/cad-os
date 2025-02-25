@@ -1,60 +1,32 @@
 (ns cad-os.core
-  (:require
-    [clojure.string :as str]
-    [clojure.edn :as edn]
-    [clojure.java.io :as io]))
+  (:require [cad-os.commands :as commands]
+            [clojure.string :as s]
+            [clojure.java.shell :refer [sh]]))
 
-;; ------------------------------------------------------------------------------
-;; 1. Example Data Structure for a Sphere
-;; ------------------------------------------------------------------------------
+(def mged-path "/usr/brlcad/rel-7.40.3/bin/mged")  ;; Use the full path
 
-(def example-sphere
-  {:type   :sphere
-   :name   "mySphere"
-   :center [0 0 0]
-   :radius 10.0})
+(defn create-g [name f & args]
+  (println "DEBUG: name =" name)
+  (println "DEBUG: f =" f)
+  (println "DEBUG: args =" args)
+  (let [result (apply f args)
+        joined (s/join ";" result)
+        quoted (str "'" joined "'")]
+    (println "DEBUG: Running:" mged-path "-c" (str name ".g") quoted)
+    ;; Use -c flag to execute commands with the joined string in single quotes
+    (sh mged-path "-c" (str name ".g") quoted)))
 
-;; ------------------------------------------------------------------------------
-;; 2. Utility: Read the commands.edn
-;; ------------------------------------------------------------------------------
 
-(defn load-commands []
-  (-> "commands.edn"
-      io/resource
-      slurp
-      edn/read-string))
-      
-;; ------------------------------------------------------------------------------
-;; 3. Utility: Simple template replacement
-;;    Replaces placeholders like {name}, {x}, etc. in a string.
-;; ------------------------------------------------------------------------------
+(defn washer
+  [inner-diameter outer-diameter thickness]
+  [(commands/insert-right-circular-cylinder "outer" 0 0 0 0 0 thickness (/ outer-diameter 2))
+   (commands/insert-right-circular-cylinder "inner" 0 0 0 0 0 thickness (/ inner-diameter 2))
+   (commands/subtraction "washer" "outer" "inner")])
 
-(defn render-template
-  "Given a template string like 'in {name} sph {x} {y} {z} {radius}'
-   and a map {:name \"mySphere\", :x 0, :y 0, :z 0, :radius 10},
-   returns 'in mySphere sph 0 0 0 10'"
-  [template data]
-  (reduce (fn [cmd [k v]]
-            (str/replace cmd
-                         (re-pattern (str "\\{" (name k) "\\}"))
-                         (str v)))
-          template
-          data))
+(println "DEBUG: Testing washer function directly:")
+(let [washer-result (washer 10 5 2)]
+  (println "DEBUG: washer result =" washer-result))
 
-;; ------------------------------------------------------------------------------
-;; 4. Transform sphere data -> MGED command string
-;; ------------------------------------------------------------------------------
-
-(defn sphere->mged-cmd
-  "Given a sphere map (as above) and a sphere template,
-   returns the properly substituted MGED command string."
-  [sphere template]
-  (let [{:keys [name center radius]} sphere
-        [x y z] center]
-    (render-template template
-                     {:name   name
-                      :x      x
-                      :y      y
-                      :z      z
-                      :radius radius})))
+(println "DEBUG: Now trying create-g:")
+(create-g "washer" washer 10 5 2)
 

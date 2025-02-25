@@ -1,5 +1,0 @@
-{
-  :units   "units mm"
-  :sphere  "in {name} sph {x} {y} {z} {radius}"
-  :quit    "quit"
-}
