@@ -1,205 +1,260 @@
 # CAD-OS: Extensible Parametric Modeling System
 
-CAD-OS is an extensible parametric modeling system that integrates with BRL-CAD for generating 3D solid models. It features a dynamic model registry that allows adding new model types without modifying the core infrastructure.
+CAD-OS is an extensible parametric modeling system that integrates with BRL-CAD for generating 3D solid models. It features a dynamic model registry that allows adding new model types without modifying the core infrastructure, client-side validation, and real-time 3D visualization.
 
 ## Overview
 
-This system provides a web-based interface for creating parametric 3D models. Key features include:
+CAD-OS provides a web-based interface for creating parametric 3D models with these key features:
 
-- **Dynamic Model Registry**: Add new model types without modifying API routes, frontend, or gateway
-- **Automatic UI Generation**: The interface dynamically adapts to each model's parameters
+- **Dynamic Model Registry**: Add new model types without modifying existing code
+- **Client-side Validation**: Real-time parameter validation in the browser
+- **Automatic UI Generation**: Interface dynamically adapts to model parameters
 - **BRL-CAD Integration**: Leverages BRL-CAD's powerful solid modeling capabilities
-- **3D Visualization**: Real-time 3D rendering of models in the browser
-- **Three-Tier Architecture**: Separation of frontend, API gateway, and modeling service
+- **3D Visualization**: Real-time model rendering and manipulation
+- **Multi-format Export**: Download models in OBJ, STL, STEP, and native BRL-CAD formats
 
 ## System Architecture
 
 CAD-OS uses a three-tier architecture:
 
-1. **Frontend**: HTML/JavaScript interface with dynamic form generation and 3D viewer
-2. **API Gateway (Python)**: FastAPI service that handles HTTP requests and forwards to the Clojure service
+1. **Frontend**: HTML/JavaScript UI with dynamic form generation and Three.js 3D viewer
+2. **API Gateway (Python/FastAPI)**: Handles HTTP requests and proxies to the modeling service
 3. **Modeling Service (Clojure)**: Core modeling logic that interfaces with BRL-CAD
 
-### Model Registry
+### Key Components
 
-The core innovation is the model registry system:
-- Models register themselves with the central registry
-- Each model provides its schema (parameters) and creation function
-- The API dynamically routes requests to the appropriate model handler
-- The frontend auto-generates UI based on model schemas
+- **Model Registry**: Central registry where models register their schemas and creation functions
+- **Schema System**: Declarative parameter definitions with frontend validation
+- **Command System**: Abstraction layer for BRL-CAD operations
+- **Format Conversion**: Utilities to convert between different 3D file formats
 
-## Project Structure
-
-```
-cad_os/
-├── api/                  # FastAPI gateway
-│   ├── main.py           # Python API gateway
-│   └── requirements.txt  # Python dependencies
-├── clojure_service/      # Clojure BRL-CAD integration
-│   ├── deps.edn          # Clojure dependencies
-│   ├── src/
-│   │   └── cad_os/
-│   │       ├── api.clj               # API routes and handlers
-│   │       ├── commands.clj          # BRL-CAD command wrappers
-│   │       ├── core.clj              # Core model creation logic
-│   │       ├── obj.clj               # OBJ file conversion
-│   │       ├── models/
-│   │       │   ├── registry.clj      # Central model registry
-│   │       │   ├── core.clj          # Shared model utilities
-│   │       │   ├── washer.clj        # Washer model implementation
-│   │       │   └── cylinder.clj      # Cylinder model implementation
-├── frontend/             # Frontend assets
-│   └── index.html        # Combined viewer and parameter panel
-```
-
-## Getting Started
+## Installation
 
 ### Prerequisites
 
-- Clojure
-- Python 3.8+
-- BRL-CAD installed at "/usr/brlcad/rel-7.40.3/bin/mged"
-- Node.js (optional, for development)
+- **BRL-CAD**: Version 7.40.3 or later (installed at `/usr/brlcad/rel-7.40.3/bin/`)
+- **Clojure**: Version 1.11.1 or later
+- **Python**: Version 3.8 or later
+- **Node.js**: For frontend development (optional)
 
-### Running the Services
+### Setup
 
-1. Start the Clojure service:
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/yourusername/cad-os.git
+   cd cad-os
    ```
+
+2. **Start the Clojure modeling service**:
+   ```bash
    cd clojure_service
    clojure -M:run
    ```
+   This will start the service on port 3000.
 
-2. Start the FastAPI gateway:
-   ```
+3. **Start the Python API gateway**:
+   ```bash
    cd api
    pip install -r requirements.txt
    uvicorn main:app --reload --host 0.0.0.0 --port 8000
    ```
+   This will start the gateway on port 8000.
 
-3. Access the application at http://localhost:8000
+4. **Access the application**:
+   Open http://localhost:8000 in your web browser
 
-## Extending with New Models
+## Using CAD-OS
 
-CAD-OS is designed to be easily extended with new model types without modifying existing code. Here's how to add a new model:
+### Creating Models
 
-### 1. Create a new model namespace
+1. Select a model type from the dropdown menu (e.g., "Washer" or "Cylinder")
+2. Fill in the parameter values in the form
+   - The form will validate your inputs in real-time
+   - Error messages will appear if parameters don't meet validation rules
+3. Click "Generate Model" to create the 3D model
+4. The model will be displayed in the 3D viewer
+   - Use the mouse to rotate, pan, and zoom the model
+   - The grid helps with size reference
 
-Create a new file in `clojure_service/src/cad_os/models/` (e.g., `box.clj`):
+### Downloading Models
+
+After generating a model, use the download buttons in the top-right of the viewer to get the model in your preferred format:
+
+- **OBJ**: Standard 3D format for most modeling software
+- **STL**: For 3D printing and CAM applications
+- **STEP**: For parametric CAD software
+- **G**: Native BRL-CAD format for further editing
+
+## Extending CAD-OS with New Models
+
+One of CAD-OS's core features is its extensibility. You can add new model types without modifying any existing code. Here's how:
+
+### 1. Create a Model Definition File
+
+Create a new Clojure file in `clojure_service/src/cad_os/models/` (e.g., `cone.clj`):
 
 ```clojure
-(ns cad-os.models.box
-  (:require [cad-os.models.core :as model-core]
-            [cad-os.commands :as commands]
+(ns cad-os.models.cone
+  (:require [cad-os.commands :as commands]
             [cad-os.models.registry :as registry]))
 
-;; 1. Define the schema (parameters)
-(defn schema
-  "Return a schema description for box parameters"
-  []
-  {:name "Box"
-   :description "A rectangular box with width, height, and depth"
+;; Define schema - this is the single source of truth for the model
+(def cone-schema
+  {:name "Cone"
+   :description "A cone with specified base radius, height, and top radius"
    :parameters
-   [{:name "width"
+   [{:name "base-radius"
      :type "number"
-     :description "Width of the box"
-     :default 10.0
-     :min 0.1}
+     :description "Radius of the cone base"
+     :default 5.0}
     {:name "height"
      :type "number"
-     :description "Height of the box"
-     :default 10.0
-     :min 0.1}
-    {:name "depth"
+     :description "Height of the cone"
+     :default 10.0}
+    {:name "top-radius"
      :type "number"
-     :description "Depth of the box"
-     :default 10.0
-     :min 0.1}]})
+     :description "Radius of the cone top (0 for pointed cone)"
+     :default 0.0}]
+   
+   ;; Validation rules - these run on the frontend
+   :validation-rules
+   [{:expr "base-radius > 0.1"
+     :message "Base radius must be greater than 0.1"}
+    {:expr "height > 0.1"
+     :message "Height must be greater than 0.1"}
+    {:expr "top-radius >= 0"
+     :message "Top radius cannot be negative"}
+    {:expr "base-radius > top-radius"
+     :message "Base radius must be greater than top radius"}]})
 
-;; 2. Parse and validate parameters
-(defn parse-params
-  "Parse and validate box parameters"
+;; Command generator function
+(defn generate-cone-commands
+  "Generate commands to create a cone model"
   [params]
-  (model-core/parse-numeric-params 
-   params 
-   [{:name "width" :min 0.1}
-    {:name "height" :min 0.1}
-    {:name "depth" :min 0.1}]))
+  (let [base-radius (get params :base-radius)
+        height (get params :height)
+        top-radius (get params :top-radius)]
+    
+    [(commands/insert-truncated-right-circular-cone 
+      "cone" 0 0 0 0 0 height base-radius top-radius)]))
 
-;; 3. Generate BRL-CAD commands for the model
-(defn generate-commands
-  "Generate commands to create a box model"
-  [width height depth]
-  [(commands/insert-right-circular-cylinder "box" 0 0 0 width 0 0 height)])
-
-;; 4. Generate a file name based on parameters
-(defn get-file-name
-  "Generate a file name for a box based on its parameters"
-  [params]
-  (let [parsed (parse-params params)]
-    (if (:valid parsed)
-      (let [{:keys [width height depth]} (:params parsed)]
-        (str "box_" width "_" height "_" depth))
-      nil)))
-
-;; 5. Create the model (main entry point)
-(defn create
-  "Create a box model from request parameters"
-  [params]
-  (try
-    (let [parsed (parse-params params)]
-      (if (:valid parsed)
-        (let [{:keys [width height depth]} (:params parsed)
-              file-name (get-file-name params)
-              commands (generate-commands width height depth)]
-          (model-core/create-model file-name "box" commands))
-        {:status "error", :message (or (:message parsed) "Invalid parameters")}))
-    (catch Exception e
-      {:status "error", :message (str "Error creating box model: " (.getMessage e))})))
-
-;; 6. Register the model with the registry
+;; Register the model - this makes it available in the UI
 (registry/register-model
- "box"
- {:schema-fn schema
-  :create-fn create})
+ "cone"
+ cone-schema
+ generate-cone-commands)
 ```
 
-### 2. Update the API to load your model
+### 2. Update `api.clj` to Load Your Model
 
-In `clojure_service/src/cad_os/api.clj`, add your model namespace to the requires:
+In `clojure_service/src/cad_os/api.clj`, add a require statement for your new model:
 
 ```clojure
-(ns cad-os.api
-  (:require [compojure.core :refer [defroutes GET POST]]
-            ;; ... other requires
-            [cad-os.models.registry :as registry]
-            ;; Add your model here
-            [cad-os.models.box :as box-model]
-            ;; ... other models
-            )
-  (:gen-class))
+(defn -main [& args]
+  ;; Clear the registry before starting to avoid duplicates
+  (println "Clearing model registry...")
+  (reset! registry/model-registry {})
+
+  ;; These requires will trigger the registration
+  (println "Loading model namespaces...")
+  (require 'cad-os.models.washer)
+  (require 'cad-os.models.cylinder)
+  (require 'cad-os.models.cone)  ;; Add your model here
+
+  ;; Start the server
+  (println "Starting CAD-OS API server on port 3000...")
+  (println "Available model types:" (registry/get-model-types))
+  (run-jetty app {:port 3000 :join? false})
+  (println "Server started!"))
 ```
 
-That's it! When you restart the Clojure service, your new model will be automatically available in the UI.
+### 3. Restart the Clojure Service
 
-## API Endpoints
+Restart the Clojure service to register your new model:
 
-The system provides the following API endpoints:
+```bash
+cd clojure_service
+clojure -M:run
+```
 
-- `GET /models/types` - Get list of available model types
-- `GET /models/schema/:type` - Get schema for a specific model type
-- `POST /generate/:type` - Generate a model of the specified type
-- `GET /models/:filename` - Download a generated model file
+Your new model will now be available in the UI dropdown!
+
+### Key Components of a Model Definition
+
+1. **Schema** (`cone-schema`):
+   - **name**: Display name in the UI
+   - **description**: Help text shown in the UI
+   - **parameters**: List of parameters with types, defaults, etc.
+   - **validation-rules**: Client-side validation expressions
+
+2. **Command Generator** (`generate-cone-commands`):
+   - Takes processed parameters
+   - Returns a list of BRL-CAD commands
+
+3. **Registration** (`registry/register-model`):
+   - Registers the model with the central registry
+   - Makes it available via the API and UI
+
+### Available Commands
+
+CAD-OS provides wrappers for BRL-CAD primitives in `commands.clj`. Common ones include:
+
+- `insert-right-circular-cylinder`: Create a cylinder
+- `insert-truncated-right-circular-cone`: Create a cone or truncated cone
+- `insert-sphere`: Create a sphere
+- `insert-torus`: Create a torus
+- `union`: Combine shapes
+- `subtraction`: Remove one shape from another
+- `intersection`: Create intersection of shapes
+
+See `clojure_service/src/cad_os/commands.clj` for the full list of available commands.
+
+## API Reference
+
+CAD-OS exposes these API endpoints:
+
+- `GET /api/models/types`: Get list of available model types
+- `GET /api/models/schemas`: Get all model schemas at once
+- `GET /api/models/schema/:type`: Get schema for a specific model type
+- `POST /api/generate/:type`: Generate a model with parameters
+- `GET /api/models/:filename`: Download model in OBJ format
+- `GET /api/models/:filename/:format`: Download model in specified format (obj, stl, step, g)
+
+## Validation System
+
+CAD-OS uses a frontend-only validation approach:
+
+1. **Declaration**: Validation rules are declared in the model schema
+2. **Transport**: Rules are sent to the frontend on startup
+3. **Execution**: Frontend validates in real-time as users type
+4. **Feedback**: Users get immediate visual feedback on validation errors
+
+Validation expressions use standard operators and can reference any parameter by name (e.g., `inner-diameter < outer-diameter`).
 
 ## Troubleshooting
 
-- If a model doesn't appear in the UI, check the Clojure service logs to ensure it was registered
-- If parameter validation fails, the API will return a 400 error with details
-- For detailed debugging, check both the Python gateway logs and Clojure service logs
+### Common Issues
+
+- **Missing BRL-CAD**: Ensure BRL-CAD is installed at `/usr/brlcad/rel-7.40.3/bin/` or update the path in `core.clj`
+- **Model Not Appearing**: Check Clojure service logs to verify your model was registered
+- **Server Error on Generation**: Check the Clojure logs for errors in your command generator function
+- **Validation Failures**: Check the browser console for validation expression errors
+
+### Debugging Tips
+
+- Frontend validation is logged to the browser console
+- The Clojure service logs model creation steps
+- The API gateway provides access logs
 
 ## Future Enhancements
 
-- Additional parametric models
-- User authentication and model sharing
-- Assembly modeling with multiple parts
-- Direct editing of model parameters in the 3D viewer
-- Export to additional CAD formats
+- More primitive model types (box, torus, etc.)
+- Composite models from multiple primitives
+- Boolean operations in the UI
+- User accounts and model saving
+- Direct parameter manipulation in the 3D viewer
+- Material and texture support
+
+## License
+
+[Your license information]

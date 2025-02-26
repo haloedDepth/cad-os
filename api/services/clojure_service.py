@@ -119,3 +119,28 @@ async def get_model_file(filename: str, format: str = None):
     except httpx.RequestError as e:
         logger.error(f"Request error: {e}")
         return {"status": 503, "error": f"Error communicating with CAD service: {str(e)}"}
+
+async def get_all_schemas():
+    """Get all model schemas at once from Clojure service"""
+    try:
+        logger.info("Requesting all model schemas from Clojure service")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{CLOJURE_SERVICE_URL}/models/schemas")
+            
+            if response.status_code != 200:
+                logger.warning(f"Error from Clojure service: {response.status_code} - {response.text}")
+                # Return empty schemas
+                return {"schemas": {}}
+            
+            try:
+                data = response.json()
+                logger.info(f"Received schemas for {len(data.get('schemas', {}))} models")
+                return data
+            except Exception as e:
+                logger.error(f"Error parsing response as JSON: {e}")
+                # Return empty schemas
+                return {"schemas": {}}
+    except httpx.RequestError as e:
+        logger.error(f"Request error: {e}")
+        # Return empty schemas
+        return {"schemas": {}}

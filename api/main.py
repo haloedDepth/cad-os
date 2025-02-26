@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import logging
+from fastapi.responses import RedirectResponse
 
 from routers import models
 
@@ -24,6 +25,10 @@ app.add_middleware(
 
 # Include routers
 app.include_router(models.router)
+
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/index.html") 
 
 @app.get("/api")
 async def read_root():

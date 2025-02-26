@@ -3,6 +3,7 @@
             [clojure.string :as s]
             [clojure.java.shell :refer [sh]]
             [cad-os.obj :as obj]
+            [cad-os.models.schema :as schema]
             [clojure.java.io :as io]))
 
 (def mged-path "/usr/brlcad/rel-7.40.3/bin/mged")
@@ -60,80 +61,80 @@
        :g-result g-result
        :obj-result obj-result})))
 
-;; Add these functions to cad-os.models.core namespace
+;; Generic parameter handling
 
-(defn parse-param
-  "Parse a parameter value from a params map"
-  [params param-name]
-  (let [variants [param-name
-                  (keyword param-name)
-                  (str param-name)
-                  (symbol param-name)
-                  (clojure.string/replace param-name "-" "_")
-                  (keyword (clojure.string/replace param-name "-" "_"))
-                  (clojure.string/replace param-name "_" "-")
-                  (keyword (clojure.string/replace param-name "_" "-"))]
-        param-value (some #(get params %) variants)]
-    (println "Parsing parameter" param-name "from params" params "-> value:" param-value)
-    (when (and param-value
-               (not= param-value "nil")
-               (not= param-value ""))
-      (str param-value))))
+(defn normalize-params
+  "Convert parameter keys to a consistent format for processing"
+  [params]
+  (reduce-kv (fn [m k v]
+               (let [key-str (cond
+                               (keyword? k) (name k)
+                               (string? k) k
+                               :else (str k))
+                     normalized-key (keyword (s/replace key-str "_" "-"))]
+                 (assoc m normalized-key v)))
+             {} params))
 
-(defn parse-numeric-params
-  "Parse and validate numeric parameters from a params map"
-  [params param-specs]
-  (println "Parsing numeric parameters from:" params)
-  (println "With specs:" param-specs)
+(defn apply-defaults
+  "Apply default values from schema for missing parameters"
+  [params schema]
+  (let [normalized-params (normalize-params params)]
+    (reduce (fn [acc param-spec]
+              (let [param-name (keyword (:name param-spec))
+                    default-value (:default param-spec)]
+                (if (and (not (contains? acc param-name))
+                         (contains? param-spec :default))
+                  (assoc acc param-name default-value)
+                  acc)))
+            normalized-params
+            (:parameters schema))))
+
+(defn convert-param-types
+  "Convert parameter values to their correct types according to schema"
+  [params schema]
+  (reduce (fn [acc param-spec]
+            (let [param-name (keyword (:name param-spec))
+                  param-value (get acc param-name)
+                  param-type (:type param-spec)]
+              (if (and param-value (= param-type "number") (or (string? param-value) (number? param-value)))
+                (try
+                  (let [numeric-value (if (number? param-value)
+                                        param-value
+                                        (Double/parseDouble (str param-value)))]
+                    (assoc acc param-name numeric-value))
+                  (catch Exception e
+                    acc))
+                acc)))
+          params
+          (:parameters schema)))
+
+(defn generate-file-name
+  "Generate a standard file name based on model type and parameters"
+  [model-type params]
+  (let [param-values (vals (select-keys params (keys params)))
+        param-str (s/join "_" param-values)]
+    (str model-type "_" param-str)))
+
+;; Generic model creation function
+(defn create-model-from-generator
+  "Create a model using a command generator function"
+  [model-type params command-generator]
   (try
-    (let [parsed-params (reduce (fn [result {:keys [name min max default]}]
-                                  (let [snake-case (clojure.string/replace name "-" "_")
-                                        kebab-case (clojure.string/replace name "_" "-")
-                                        value-raw (or (get params (keyword name))
-                                                      (get params name)
-                                                      (get params (keyword snake-case))
-                                                      (get params snake-case)
-                                                      (get params (keyword kebab-case))
-                                                      (get params kebab-case))]
-                                    (println (str "For parameter " name ": found value " value-raw))
-                                    (if (nil? value-raw)
-                                      (if default
-                                        (do
-                                          (println (str "Using default value for " name ": " default))
-                                          (assoc result (keyword name) default))
-                                        (reduced {:valid false
-                                                  :message (str "Missing required parameter: " name)}))
-                                      (let [value-str (str value-raw)
-                                            _ (println (str "Converting " value-str " to number"))
-                                            value (try
-                                                    (Double/parseDouble value-str)
-                                                    (catch Exception e
-                                                      (println "Parse error:" (.getMessage e))
-                                                      nil))]
-                                        (cond
-                                          (nil? value)
-                                          (reduced {:valid false
-                                                    :message (str "Could not parse " name " as a number: " value-str)})
+    (println "Creating" model-type "with params:" params)
 
-                                          (and min (< value min))
-                                          (reduced {:valid false
-                                                    :message (str name " must be at least " min)})
+    ;; Generate the file name
+    (let [file-name (generate-file-name model-type params)
 
-                                          (and max (> value max))
-                                          (reduced {:valid false
-                                                    :message (str name " must be at most " max)})
+          ;; Generate commands for the model
+          commands (command-generator params)]
 
-                                          :else
-                                          (do
-                                            (println (str "Parameter " name " = " value " (validated)"))
-                                            (assoc result (keyword name) value)))))))
-                                {} param-specs)]
-      (println "Final parsed params:" parsed-params)
-      (if (and (map? parsed-params) (contains? parsed-params :valid))
-        parsed-params  ; This is already an error result
-        {:valid true :params parsed-params}))
+      (println "Using file name:" file-name)
+      (println "Generated commands:" commands)
+
+      ;; Create the actual model
+      (create-model file-name model-type commands))
+
     (catch Exception e
-      (println "Exception in parse-numeric-params:" (.getMessage e))
+      (println "Exception in" model-type "creation:" (.getMessage e))
       (.printStackTrace e)
-      {:valid false
-       :message (str "Error parsing parameters: " (.getMessage e))})))
+      {:status "error", :message (str "Error creating " model-type " model: " (.getMessage e))})))

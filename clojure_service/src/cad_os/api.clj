@@ -73,6 +73,15 @@
        :headers {"Content-Type" "application/json"}
        :body {:model_types types}}))
 
+  ;; Get all schemas
+  (GET "/models/schemas" []
+    (println "Getting all model schemas")
+    (let [schemas (registry/get-all-schemas)]
+      (println "Returning schemas for" (count schemas) "models")
+      {:status 200
+       :headers {"Content-Type" "application/json"}
+       :body {:schemas schemas}}))
+
   ;; Get schema for a specific model type
   (GET "/models/schema/:type" [type]
     (println "Getting schema for type:" type)
@@ -90,7 +99,7 @@
     (println "Generating model of type:" type)
     (handle-model-request (partial registry/create-model type) req))
 
-  ;; Get model in specific format (new endpoint)
+  ;; Get model in specific format
   (GET "/models/:filename/:format" [filename format]
     (println "Handling /models/" filename "/" format "request")
     (println "Full requested filename:" filename)

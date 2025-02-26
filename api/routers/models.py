@@ -15,6 +15,18 @@ async def get_model_types():
     """Get list of available model types"""
     return await clojure_service.get_model_types()
 
+@router.get("/models/schemas")
+async def get_all_schemas():
+    """Get all model schemas at once"""
+    logger.info("Request for all schemas received")
+    try:
+        response = await clojure_service.get_all_schemas()
+        logger.info(f"Returning schemas for {len(response.get('schemas', {}))} models")
+        return response
+    except Exception as e:
+        logger.error(f"Error getting all schemas: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching schemas: {str(e)}")
+
 @router.get("/models/schema/{model_type}")
 async def get_model_schema(model_type: str):
     """Get schema for a specific model type"""

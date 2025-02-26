@@ -1,6 +1,7 @@
 import { initViewer, loadModel } from './viewer.js';
-import { loadModelTypes, loadModelSchema, generateModel, downloadModel } from './modelService.js';
+import { loadModelTypes, loadAllSchemas, loadModelSchema, generateModel, downloadModel } from './modelService.js';
 import * as ui from './uiController.js';
+import { validateParameters } from './validator.js';
 
 // Initialize the application
 async function initApp() {
@@ -12,6 +13,16 @@ async function initApp() {
   
   // Initialize download buttons
   initDownloadButtons();
+  
+  // Load all model schemas first (new approach)
+  try {
+    console.log("Loading all model schemas...");
+    const allSchemas = await loadAllSchemas();
+    ui.setAllModelSchemas(allSchemas);
+  } catch (error) {
+    console.error("Failed to load all schemas:", error);
+    // We'll fall back to loading individual schemas when types are selected
+  }
   
   // Load model types
   try {
@@ -61,11 +72,15 @@ async function handleModelTypeChange() {
   
   ui.setCurrentModelType(selectedType);
   
-  try {
-    const schema = await loadModelSchema(selectedType);
-    ui.updateModelForm(schema);
-  } catch (error) {
-    ui.showStatus('Error loading model schema: ' + error.message, 'error');
+  // Try to use already loaded schema
+  // If not available, load it from the server
+  if (!ui.getCurrentModelSchema()) {
+    try {
+      const schema = await loadModelSchema(selectedType);
+      ui.updateModelForm(schema);
+    } catch (error) {
+      ui.showStatus('Error loading model schema: ' + error.message, 'error');
+    }
   }
 }
 
@@ -79,24 +94,26 @@ async function handleGenerateModel() {
   
   // Show loading state
   ui.showLoading(true);
-  ui.showStatus('', 'info');
+  ui.showStatus('Validating parameters...', 'info');
   
   try {
-    // Prepare params with correct types
-    const paramsRaw = ui.getCurrentModelParams();
-    const paramsToSend = {};
-    
+    // First, validate parameters on client side
     const currentSchema = ui.getCurrentModelSchema();
-    if (currentSchema && currentSchema.parameters) {
-      currentSchema.parameters.forEach(param => {
-        const paramValue = paramsRaw[param.name];
-        if (param.type === 'number') {
-          paramsToSend[param.name] = parseFloat(paramValue);
-        } else {
-          paramsToSend[param.name] = paramValue;
-        }
-      });
+    const currentParams = ui.getCurrentModelParams();
+    console.log("Validating before submission:", currentParams, currentSchema);
+    
+    // Re-run validation manually as a double-check
+    const validationResult = validateParameters(currentParams, currentSchema);
+    console.log("Pre-submission validation result:", validationResult);
+    
+    if (!validationResult.valid) {
+      throw new Error(`Validation failed: ${validationResult.errors.join(', ')}`);
     }
+    
+    // Get processed parameters
+    ui.showStatus('Generating model...', 'loading');
+    const paramsToSend = ui.getPreparedModelParams();
+    console.log("Sending parameters:", paramsToSend);
     
     // Generate the model
     const fileName = await generateModel(modelType, paramsToSend);
@@ -138,6 +155,7 @@ async function handleGenerateModel() {
       );
     }, 1000);
   } catch (error) {
+    console.error("Model generation error:", error);
     ui.showStatus(`Error: ${error.message}`, 'error');
   } finally {
     // Reset loading state
