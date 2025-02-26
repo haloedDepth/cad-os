@@ -93,9 +93,3 @@ async def get_model_with_format(filename: str, format: str):
         media_type="application/octet-stream",
         headers={"Content-Disposition": f"attachment; filename={filename}.{format_to_ext[format]}"}
     )
-
-# Legacy endpoint for backward compatibility
-@router.post("/generate/washer")
-async def generate_washer(params: Dict[str, Any] = Body(...)):
-    """Legacy endpoint for washer generation"""
-    return await generate_model("washer", params)
