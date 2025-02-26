@@ -1,48 +1,53 @@
 (ns cad-os.models.washer
   (:require [cad-os.models.core :as model-core]
-            [cad-os.commands :as commands]))
+            [cad-os.commands :as commands]
+            [cad-os.models.registry :as registry]))
 
+;; Schema function to describe the model parameters
+(defn schema
+  "Return a schema description for washer parameters"
+  []
+  {:name "Washer"
+   :description "A simple washer (ring) with inner and outer diameters"
+   :parameters
+   [{:name "outer-diameter"
+     :type "number"
+     :description "Outer diameter of the washer"
+     :default 10.0
+     :min 0.1}
+    {:name "inner-diameter"
+     :type "number"
+     :description "Inner diameter of the washer"
+     :default 6.0
+     :min 0.1}
+    {:name "thickness"
+     :type "number"
+     :description "Thickness of the washer"
+     :default 2.0
+     :min 0.1}]})
+
+;; Parse and validate washer parameters
 (defn parse-params
   "Parse and validate washer parameters from a request map"
   [params]
-  (let [get-param (fn [key]
-                    (or (get params (keyword key))
-                        (get params (str key))
-                        (get params (symbol key))))
-
-        outer-diameter-str (str (get-param "outer-diameter"))
-        inner-diameter-str (str (get-param "inner-diameter"))
-        thickness-str (str (get-param "thickness"))]
-
-    ;; Check if any required parameters are missing
-    (if (some #(or (nil? %) (= "nil" %) (empty? %))
-              [outer-diameter-str inner-diameter-str thickness-str])
-      {:valid false
-       :message "Missing required parameters: outer-diameter, inner-diameter, thickness"}
-
-      ;; Parse values
-      (try
-        (let [outer-d (Double/parseDouble outer-diameter-str)
-              inner-d (Double/parseDouble inner-diameter-str)
-              thick (Double/parseDouble thickness-str)]
-
-          ;; Validate values
-          (cond
-            (<= outer-d 0) {:valid false, :message "Outer diameter must be positive"}
-            (<= inner-d 0) {:valid false, :message "Inner diameter must be positive"}
-            (<= thick 0) {:valid false, :message "Thickness must be positive"}
-            (>= inner-d outer-d) {:valid false, :message "Inner diameter must be less than outer diameter"}
-            :else {:valid true
-                   :params {:outer-diameter outer-d
-                            :inner-diameter inner-d
-                            :thickness thick}}))
-        (catch Exception e
+  (println "Washer parse-params called with:" params)
+  (let [param-specs [{:name "outer-diameter" :min 0.1}
+                     {:name "inner-diameter" :min 0.1}
+                     {:name "thickness" :min 0.1}]
+        result (model-core/parse-numeric-params params param-specs)]
+    (println "Initial parse result:" result)
+    (if (:valid result)
+      (let [{:keys [outer-diameter inner-diameter]} (:params result)]
+        (if (>= inner-diameter outer-diameter)
           {:valid false
-           :message (str "Error parsing parameters: " (.getMessage e))})))))
+           :message "Inner diameter must be less than outer diameter"}
+          result))
+      result)))
 
 (defn generate-commands
   "Generate commands to create a washer model"
   [outer-diameter inner-diameter thickness]
+  (println "Generating washer commands with: outer=" outer-diameter "inner=" inner-diameter "thickness=" thickness)
   [(commands/insert-right-circular-cylinder "outer" 0 0 0 0 0 thickness (/ outer-diameter 2))
    (commands/insert-right-circular-cylinder "inner" 0 0 0 0 0 thickness (/ inner-diameter 2))
    (commands/subtraction "washer" "outer" "inner")])
@@ -59,10 +64,25 @@
 (defn create
   "Create a washer model from request parameters"
   [params]
-  (let [parsed (parse-params params)]
-    (if (:valid parsed)
-      (let [{:keys [outer-diameter inner-diameter thickness]} (:params parsed)
-            file-name (get-file-name params)
-            commands (generate-commands outer-diameter inner-diameter thickness)]
-        (model-core/create-model file-name "washer" commands))
-      {:status "error", :message (:message parsed)})))
+  (println "Creating washer with params:" params)
+  (try
+    (let [parsed (parse-params params)]
+      (println "Parsed params result:" parsed)
+      (if (:valid parsed)
+        (let [{:keys [outer-diameter inner-diameter thickness]} (:params parsed)
+              file-name (get-file-name params)
+              _ (println "Using file name:" file-name)
+              commands (generate-commands outer-diameter inner-diameter thickness)]
+          (println "Generated commands:" commands)
+          (model-core/create-model file-name "washer" commands))
+        {:status "error", :message (or (:message parsed) "Invalid parameters")}))
+    (catch Exception e
+      (println "Exception in washer creation:" (.getMessage e))
+      (.printStackTrace e)
+      {:status "error", :message (str "Error creating washer model: " (.getMessage e))})))
+
+;; Register this model with the registry
+(registry/register-model
+ "washer"
+ {:schema-fn schema
+  :create-fn create})

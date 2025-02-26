@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from typing import Dict, Any
 import httpx
 import os
 
@@ -16,12 +16,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Model definitions
-class WasherParams(BaseModel):
-    outer_diameter: str
-    inner_diameter: str
-    thickness: str
-
 # Clojure service URL
 CLOJURE_SERVICE_URL = "http://localhost:3000"
 
@@ -29,20 +23,78 @@ CLOJURE_SERVICE_URL = "http://localhost:3000"
 async def read_root():
     return {"message": "CAD-OS API Gateway is running"}
 
-@app.post("/api/generate/washer")
-async def generate_washer(params: WasherParams):
-    """Generate a washer model with the given parameters"""
+@app.get("/api/models/types")
+async def get_model_types():
+    """Get list of available model types"""
     try:
-        print(f"Received washer parameters: {params}")
+        print("Requesting model types from Clojure service")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{CLOJURE_SERVICE_URL}/models/types")
+            
+            if response.status_code != 200:
+                print(f"Error from Clojure service: {response.status_code} - {response.text}")
+                # Return fallback types instead of raising an error
+                return {"model_types": ["washer", "cylinder"]}
+            
+            try:
+                data = response.json()
+                print(f"Received model types from Clojure: {data}")
+                
+                # If data is already in the right format, return it
+                if "model_types" in data:
+                    return data
+                
+                # Otherwise wrap it in the expected format
+                return {"model_types": data.get("model_types", ["washer", "cylinder"])}
+            except Exception as e:
+                print(f"Error parsing response as JSON: {e}")
+                # Return fallback types
+                return {"model_types": ["washer", "cylinder"]}
+    except httpx.RequestError as e:
+        print(f"Request error: {e}")
+        # Return fallback types instead of raising an error
+        return {"model_types": ["washer", "cylinder"]}
+
+@app.get("/api/models/schema/{model_type}")
+async def get_model_schema(model_type: str):
+    """Get schema for a specific model type"""
+    try:
+        print(f"Requesting schema for model type: {model_type}")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{CLOJURE_SERVICE_URL}/models/schema/{model_type}")
+            
+            if response.status_code != 200:
+                print(f"Error from Clojure service: {response.status_code} - {response.text}")
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Unknown model type: {model_type}"
+                )
+            
+            return response.json()
+    except httpx.RequestError as e:
+        print(f"Request error: {e}")
+        raise HTTPException(status_code=503, detail=f"Error communicating with CAD service: {str(e)}")
+
+@app.post("/api/generate/{model_type}")
+async def generate_model(model_type: str, params: Dict[str, Any] = Body(...)):
+    """Generate a model with the given parameters"""
+    try:
+        print(f"Received parameters for {model_type}: {params}")
+        
+        # Convert parameters to the format expected by the Clojure service
+        # Replace underscores with hyphens in parameter names for Clojure convention
+        converted_params = {}
+        for key, value in params.items():
+            # Convert keys with underscores to hyphenated format for Clojure
+            new_key = key.replace("_", "-")
+            converted_params[new_key] = value
+            
+        print(f"Converted parameters: {converted_params}")
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{CLOJURE_SERVICE_URL}/generate/washer",
-                json={
-                    "outer-diameter": params.outer_diameter,
-                    "inner-diameter": params.inner_diameter,
-                    "thickness": params.thickness
-                }
+                f"{CLOJURE_SERVICE_URL}/generate/{model_type}",
+                json=converted_params
             )
             
             if response.status_code != 200:
@@ -54,9 +106,13 @@ async def generate_washer(params: WasherParams):
                     error_text = f"Error communicating with Clojure service: {str(e)}"
                 
                 print(f"Error response from Clojure service: {error_text}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Error generating model: {error_text}"
+                
+                # Instead of raising an HTTP 500, pass through the original error
+                # This allows the frontend to see the actual error message
+                return Response(
+                    content=error_text, 
+                    status_code=400,
+                    media_type="application/json"
                 )
             
             result = response.json()
@@ -78,6 +134,7 @@ async def get_model(filename: str):
         # Ensure we're requesting with .obj extension
         request_filename = filename if filename.endswith(".obj") else f"{filename}.obj"
         
+        print(f"Requesting model file: {request_filename}")
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{CLOJURE_SERVICE_URL}/models/{request_filename}",
@@ -85,6 +142,7 @@ async def get_model(filename: str):
             )
             
             if response.status_code != 200:
+                print(f"Error from Clojure service: {response.status_code} - {response.text}")
                 raise HTTPException(
                     status_code=response.status_code, 
                     detail=f"Model not found: {request_filename}"
@@ -96,7 +154,14 @@ async def get_model(filename: str):
                 headers={"Content-Disposition": f"attachment; filename={request_filename}"}
             )
     except httpx.RequestError as e:
+        print(f"Request error: {e}")
         raise HTTPException(status_code=503, detail=f"Error communicating with CAD service: {str(e)}")
+
+# Legacy endpoint for backward compatibility
+@app.post("/api/generate/washer")
+async def generate_washer(params: Dict[str, Any] = Body(...)):
+    """Legacy endpoint for washer generation"""
+    return await generate_model("washer", params)
 
 # Mount static files (frontend)
 app.mount("/", StaticFiles(directory="../frontend", html=True), name="frontend")
