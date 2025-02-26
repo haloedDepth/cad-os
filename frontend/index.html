@@ -84,6 +84,22 @@
       <!-- Model Viewer -->
       <div class="flex-1 relative">
         <div id="viewer" class="w-full h-full"></div>
+        
+        <!-- Download Buttons (New) -->
+        <div id="downloadButtons" class="absolute top-4 right-4 flex space-x-2" style="display: none;">
+          <button id="downloadObj" class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded text-sm">
+            OBJ
+          </button>
+          <button id="downloadStl" class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded text-sm">
+            STL
+          </button>
+          <button id="downloadStep" class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded text-sm">
+            STEP
+          </button>
+          <button id="downloadG" class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded text-sm">
+            G
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -105,10 +121,18 @@
     const statusContainer = document.getElementById('statusContainer');
     const statusMessage = document.getElementById('statusMessage');
     
+    // Download buttons elements
+    const downloadButtons = document.getElementById('downloadButtons');
+    const downloadObj = document.getElementById('downloadObj');
+    const downloadStl = document.getElementById('downloadStl');
+    const downloadStep = document.getElementById('downloadStep');
+    const downloadG = document.getElementById('downloadG');
+    
     // Current model state
     let currentModelType = '';
     let currentModelSchema = null;
     let currentModelParams = {};
+    let currentModelFileName = null; // Track current model file name
     
     // Three.js variables
     let renderer, scene, camera, controls, currentModel;
@@ -116,11 +140,56 @@
     // Initialize the application
     async function initApp() {
       initViewer();
+      initDownloadButtons();
       await loadModelTypes();
       
       // Add event listeners
       modelTypeSelect.addEventListener('change', handleModelTypeChange);
       generateButton.addEventListener('click', generateModel);
+    }
+    
+    // Initialize download buttons
+    function initDownloadButtons() {
+      // Set up event listeners for download buttons
+      downloadObj.addEventListener('click', () => downloadModel('obj'));
+      downloadStl.addEventListener('click', () => downloadModel('stl'));
+      downloadStep.addEventListener('click', () => downloadModel('step'));
+      downloadG.addEventListener('click', () => downloadModel('g'));
+    }
+    
+    // Download model in specified format
+    function downloadModel(format) {
+      if (!currentModelFileName) {
+        showStatus('No model loaded to download', 'error');
+        return;
+      }
+      
+      showStatus(`Preparing ${format.toUpperCase()} file for download...`, 'loading');
+      
+      // Use the exact filename without any modification
+      // This ensures we match the filename pattern used by the backend
+      
+      // Format to file extension mapping
+      const formatToExt = {
+        'obj': 'obj',
+        'stl': 'stl',
+        'step': 'stp',
+        'g': 'g'
+      };
+      
+      // Create a download link
+      const downloadUrl = `/api/models/${currentModelFileName}/${format}`;
+      console.log(`Downloading from: ${downloadUrl}`);
+      
+      // Create and click a temporary link
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `${currentModelFileName}.${formatToExt[format]}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showStatus(`${format.toUpperCase()} file download initiated`, 'success');
     }
     
     // Load available model types
@@ -454,6 +523,9 @@
     }
     
     function loadModel(fileName) {
+      // Store current model file name
+      currentModelFileName = fileName;
+      
       // Remove current model if exists
       if (currentModel) {
         scene.remove(currentModel);
@@ -514,6 +586,9 @@
           controls.update();
           
           console.log('Model added to scene and camera adjusted');
+          
+          // Show download buttons
+          downloadButtons.style.display = 'flex';
           
           // Update status
           showStatus('Model loaded successfully!', 'success');

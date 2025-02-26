@@ -5,7 +5,8 @@
             [ring.adapter.jetty :refer [run-jetty]]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
-            [cad-os.models.registry :as registry])
+            [cad-os.models.registry :as registry]
+            [cad-os.formats :as formats])
   (:gen-class))
 
 (defn handle-model-request
@@ -31,6 +32,34 @@
        :headers {"Content-Type" "application/json"}
        :body {:status "error"
               :message (str "Internal server error: " (.getMessage e))}})))
+
+(defn get-model-file
+  "Get a model file in the specified format"
+  [filename format]
+  (println "Handling get-model-file request for" filename "in format" format)
+  (let [base-name (if (.endsWith filename ".obj")
+                    (clojure.string/replace filename #"\.obj$" "")
+                    filename)
+        format-keyword (keyword format)
+        result (formats/ensure-format base-name format-keyword)]
+
+    (println "Format conversion result:" result)
+
+    (if (= (:status result) "success")
+      (let [file (io/file (:file result))]
+        (println "Serving file:" (.getAbsolutePath file))
+        (if (.exists file)
+          {:status 200
+           :headers {"Content-Type" "application/octet-stream"
+                     "Content-Disposition" (str "attachment; filename=\""
+                                                (.getName file) "\"")}
+           :body file}
+          {:status 404
+           :headers {"Content-Type" "application/json"}
+           :body {:error (str "File not found: " (.getAbsolutePath file))}}))
+      {:status 500
+       :headers {"Content-Type" "application/json"}
+       :body {:error (:message result)}})))
 
 (defroutes app-routes
   (GET "/" [] "CAD-OS API is running")
@@ -61,6 +90,15 @@
     (println "Generating model of type:" type)
     (handle-model-request (partial registry/create-model type) req))
 
+  ;; Get model in specific format (new endpoint)
+  (GET "/models/:filename/:format" [filename format]
+    (println "Handling /models/" filename "/" format "request")
+    (println "Full requested filename:" filename)
+    (let [result (get-model-file filename format)]
+      (println "Response status:" (:status result))
+      result))
+
+  ;; Original model endpoint
   (GET "/models/:filename" [filename]
     (println "Handling /models/" filename "request")
     (let [obj-file (io/file (if (.endsWith filename ".obj")

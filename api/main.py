@@ -157,6 +157,53 @@ async def get_model(filename: str):
         print(f"Request error: {e}")
         raise HTTPException(status_code=503, detail=f"Error communicating with CAD service: {str(e)}")
 
+@app.get("/api/models/{filename}/{format}")
+async def get_model_with_format(filename: str, format: str):
+    """Retrieve a model file by filename in the specified format"""
+    try:
+        # Validate format
+        valid_formats = ["obj", "stl", "step", "g"]
+        if format not in valid_formats:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid format: {format}. Valid formats are: {', '.join(valid_formats)}"
+            )
+            
+        # Use the filename as-is, without modification
+        # This ensures we pass the exact filename format to the Clojure service
+        base_filename = filename
+        
+        # Map format to file extension
+        format_to_ext = {
+            "obj": "obj",
+            "stl": "stl",
+            "step": "stp",
+            "g": "g"
+        }
+        
+        print(f"Requesting model file: {base_filename} in format: {format}")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{CLOJURE_SERVICE_URL}/models/{base_filename}/{format}",
+                follow_redirects=True
+            )
+            
+            if response.status_code != 200:
+                print(f"Error from Clojure service: {response.status_code} - {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code, 
+                    detail=f"Model not found: {base_filename} in format {format}"
+                )
+                
+            return Response(
+                content=response.content,
+                media_type="application/octet-stream",
+                headers={"Content-Disposition": f"attachment; filename={base_filename}.{format_to_ext[format]}"}
+            )
+    except httpx.RequestError as e:
+        print(f"Request error: {e}")
+        raise HTTPException(status_code=503, detail=f"Error communicating with CAD service: {str(e)}")
+
 # Legacy endpoint for backward compatibility
 @app.post("/api/generate/washer")
 async def generate_washer(params: Dict[str, Any] = Body(...)):
