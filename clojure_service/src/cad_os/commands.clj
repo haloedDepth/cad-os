@@ -1,4 +1,5 @@
-(ns cad-os.commands)
+(ns cad-os.commands
+  (:require [clojure.string :as str]))
 
 ;; Ellipsoidis
 (defn insert-ellipsoid
@@ -88,11 +89,11 @@
 (defn insert-right-parabolic-cylinder
   [name vertex-x vertex-y vertex-z
    vectorH-x vectorH-y vectorH-z
-   vectorB-x vectorB-y vectorB-z 
+   vectorB-x vectorB-y vectorB-z
    rectangular-half-width]
   (str "in " name " rpc " vertex-x " " vertex-y " " vertex-z " "
        vectorH-x " " vectorH-y " " vectorH-z " "
-       vectorB-x " " vectorB-y " " vectorB-z " " 
+       vectorB-x " " vectorB-y " " vectorB-z " "
        rectangular-half-width))
 
 (defn insert-truncated-elliptical-cone
@@ -115,7 +116,7 @@
 
 ;; Other solids
 (defn insert-torus
-  [name center-x center-y center-z 
+  [name center-x center-y center-z
    normal-x normal-y normal-z
    radius-revolution radius-tube]
   (str "in " name " tor " center-x " " center-y " " center-z " "
@@ -123,7 +124,7 @@
        radius-revolution " " radius-tube))
 
 (defn insert-elliptical-torus
-  [name center-x center-y center-z 
+  [name center-x center-y center-z
    normal-x normal-y normal-z
    radius-revolution vectorC-x vectorC-y vectorC-z
    magnitude-semi-minor-axis]
@@ -140,33 +141,107 @@
        vectorH-x " " vectorH-y " " vectorH-z " "
        radius-v " " radius-h))
 
-(defn validate-segments [vertex-list segment-list]
-  (let [vertex-count (count vertex-list)
-        invalid-segments (filter (fn [[start end]]
-                                   (or (>= start vertex-count)
-                                       (>= end vertex-count)
-                                       (< start 0)
-                                       (< end 0)))
-                                 segment-list)]
-    (if (empty? invalid-segments)
-      true
-      {:valid false
-       :message (str "Error: " (count invalid-segments) " segments reference non-existent vertices")
-       :invalid-segments invalid-segments})))
-
-(defn format-segment [[start end]]
+;; Sketch segment formatting and validation
+(defn format-line-segment [[start end]]
   (str "{line S " start " E " end "}"))
 
-(defn insert-sketch [sketch-name v1 v2 v3 a1 a2 a3 b1 b2 b3 vertex-list segment-list]
-  (let [validation-result (validate-segments vertex-list segment-list)]
-    (if (= validation-result true)
+(defn validate-arc-params
+  "Validates arc parameters based on BRL-CAD rules"
+  [[start end radius left-right orientation :as arc-params]]
+  (let [validation-errors
+        (cond-> []
+          (and (= start end) (>= radius 0))
+          (conj "Start and end points must be different for regular arcs")
+
+          (and (< radius 0) (not= start end))
+          (conj "Full circles (negative radius) must have same start and end point")
+
+          (not (contains? #{0 1} left-right))
+          (conj "Left-right parameter must be 0 or 1")
+
+          (not (contains? #{0 1} orientation))
+          (conj "Orientation parameter must be 0 or 1"))]
+    {:valid (empty? validation-errors)
+     :errors validation-errors}))
+
+(defn format-arc-segment [[start end radius left-right orientation :as arc-params]]
+  (let [validation (validate-arc-params arc-params)]
+    (if (:valid validation)
+      (str "{carc S " start " E " end " R " radius " L " left-right " O " orientation "}")
+      (throw (Exception. (str "Invalid arc parameters: " (str/join ", " (:errors validation))))))))
+
+(defn format-bezier-segment [[degree & points]]
+  (if (and (number? degree)
+           (>= degree 1)
+           (<= degree (count points)))
+    (str "{bezier D " degree " P {" (str/join " " points) "}}")
+    (throw (Exception. "Invalid bezier parameters: degree must be between 1 and point count"))))
+
+(defn format-segment [segment]
+  (case (first segment)
+    :line (format-line-segment (rest segment))
+    :arc (format-arc-segment (rest segment))
+    :bezier (format-bezier-segment (rest segment))
+    (throw (Exception. (str "Unknown segment type: " (first segment))))))
+
+(defn validate-segments [vertex-list segments]
+  (let [vertex-count (count vertex-list)
+        validate-point (fn [p] (and (>= p 0) (< p vertex-count)))
+        validate-points (fn [points] (every? validate-point points))]
+    (reduce (fn [result segment]
+              (let [segment-type (first segment)
+                    points (case segment-type
+                             :line (rest segment)
+                             :arc [(second segment) (nth segment 2)]
+                             :bezier (drop 2 segment)
+                             [])]
+                (cond
+                  (not (contains? #{:line :arc :bezier} segment-type))
+                  (update result :invalid-segments conj
+                          {:segment segment
+                           :error "Invalid segment type"})
+
+                  (not (validate-points points))
+                  (update result :invalid-segments conj
+                          {:segment segment
+                           :error "Points out of range"})
+
+                  (= segment-type :arc)
+                  (let [arc-validation (validate-arc-params (rest segment))]
+                    (if (:valid arc-validation)
+                      result
+                      (update result :invalid-segments conj
+                              {:segment segment
+                               :error (:errors arc-validation)})))
+
+                  (= segment-type :bezier)
+                  (let [degree (second segment)
+                        point-count (- (count segment) 2)]
+                    (if (and (number? degree)
+                             (>= degree 1)
+                             (<= degree point-count))
+                      result
+                      (update result :invalid-segments conj
+                              {:segment segment
+                               :error "Invalid bezier degree"})))
+
+                  :else result)))
+            {:valid true :invalid-segments []}
+            segments)))
+
+(defn insert-sketch [sketch-name v1 v2 v3 a1 a2 a3 b1 b2 b3 vertex-list segments]
+  (let [validation-result (validate-segments vertex-list segments)]
+    (if (:valid validation-result)
       (str "put " sketch-name " sketch "
            "V {" v1 " " v2 " " v3 "} "
            "A {" a1 " " a2 " " a3 "} "
            "B {" b1 " " b2 " " b3 "} "
-           "VL { " (clojure.string/join " " (map #(str "{" (first %) " " (second %) "}") vertex-list)) " } "
-           "SL { " (clojure.string/join " " (map format-segment segment-list)) " }")
-      (str "Sketch validation failed: " (:message validation-result)))))
+           "VL { " (str/join " " (map #(str "{" (first %) " " (second %) "}") vertex-list)) " } "
+           "SL { " (str/join " " (map format-segment segments)) " }")
+      (str "Sketch validation failed: "
+           (str/join ", "
+                     (map #(str (:error %) " in " (:segment %))
+                          (:invalid-segments validation-result)))))))
 
 (defn insert-sketch-revolve
   [name vertex-x vertex-y vertex-z
