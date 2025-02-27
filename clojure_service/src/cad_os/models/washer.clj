@@ -43,9 +43,9 @@
              outer-diameter "inner=" inner-diameter "thickness=" thickness)
 
     [(commands/insert-right-circular-cylinder
-      "outer" 0 0 0 0 0 thickness (/ outer-diameter 2))
+      "outer" [0 0 0] [0 0 thickness] (/ outer-diameter 2))
      (commands/insert-right-circular-cylinder
-      "inner" 0 0 0 0 0 thickness (/ inner-diameter 2))
+      "inner" [0 0 0] [0 0 thickness] (/ inner-diameter 2))
      (commands/subtraction "washer" "outer" "inner")]))
 
 ;; Register the washer model

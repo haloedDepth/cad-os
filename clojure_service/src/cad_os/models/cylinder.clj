@@ -32,7 +32,7 @@
 
     (println "Generating cylinder commands with: radius=" radius "height=" height)
 
-    [(commands/insert-right-circular-cylinder "cylinder" 0 0 0 0 0 height radius)]))
+    [(commands/insert-right-circular-cylinder "cylinder" [0 0 0] [0 0 height] radius)]))
 
 ;; Register the cylinder model
 (registry/register-model

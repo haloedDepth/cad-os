@@ -12,11 +12,17 @@
   [[x y z]]
   (str x " " y " " z))
 
+(defn create-point
+  "Create a 3D point from individual x, y, z coordinates.
+   This helps make code more explicit when creating points."
+  [x y z]
+  [x y z])
+
 (defn validate-point
   "Validate that v is a 3D point vector"
   [v]
   (when-not (and (vector? v) (= (count v) 3) (every? number? v))
-    (throw (Exception. "Expected a vector of 3 numbers [x y z]"))))
+    (throw (Exception. (str "Expected a vector of 3 numbers [x y z], got: " v)))))
 
 (defn validate-points
   "Validate multiple 3D point vectors"
@@ -92,7 +98,13 @@
        magnitude-c " " magnitude-d))
 
 (defn insert-right-circular-cylinder
-  "Create right circular cylinder"
+  "Create right circular cylinder.
+   
+   Parameters:
+   - name: The name of the cylinder
+   - position: A vector [x y z] representing the base center point
+   - vector-h: A vector [x y z] representing the height vector
+   - radius: The radius of the cylinder"
   [name position vector-h radius]
   (validate-points [position vector-h])
   (str "in " name " rcc "
