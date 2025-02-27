@@ -16,7 +16,23 @@
   (try
     (let [params (:body request)
           _ (println "Processing params:" params)
-          result (create-fn params)]
+
+          ;; Extract format request if present (in future API versions)
+          requested-formats (get params :formats nil)
+          _ (when requested-formats
+              (println "Client requested specific formats:" requested-formats))
+
+          ;; For web requests, create both .g and .obj by default for backward compatibility
+          formats #{:g :obj}
+
+          ;; If specific formats were requested, parse them
+          formats (if requested-formats
+                    (into #{} (map keyword requested-formats))
+                    formats)
+
+          ;; Create model with specified formats
+          result (create-fn params :formats formats)]
+
       (println "Model creation result:" result)
       (if (= (:status result) "error")
         {:status 400

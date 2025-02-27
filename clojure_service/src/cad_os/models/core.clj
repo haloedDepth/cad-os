@@ -4,6 +4,7 @@
             [clojure.java.shell :refer [sh]]
             [cad-os.obj :as obj]
             [cad-os.models.schema :as schema]
+            [cad-os.formats :as formats]
             [clojure.java.io :as io]))
 
 (def mged-path "/usr/brlcad/rel-7.40.3/bin/mged")
@@ -31,35 +32,67 @@
       (assoc shell-result :file (str file-name ".g")))))
 
 (defn create-model
-  "Create a model and convert it to OBJ format"
-  [file-name model-name commands]
-  (let [;; Create the .g file
-        g-result (create-g-file file-name commands)
-        g-file-path (str file-name ".g")
+  "Create a model with optional conversion to requested formats
+   
+   Parameters:
+   - file-name: Base name for the model files
+   - model-name: Name of the model inside the .g file
+   - commands: List of commands to create the model
+   - formats: Set of formats to generate (:g, :obj, :stl, :step)"
+  [file-name model-name commands & {:keys [formats] :or {formats #{:g}}}]
+  (try
+    ;; Create the .g file (always required as base format)
+    (let [g-result (create-g-file file-name commands)
+          g-file-path (str file-name ".g")
+          g-file-exists (wait-for-file g-file-path 30 100)]
 
-        ;; Wait for the .g file to exist
-        g-file-exists (wait-for-file g-file-path 30 100)
+      (if-not g-file-exists
+        ;; G file creation failed
+        {:status "error"
+         :message "G file was not created in time"
+         :g-result g-result}
 
-        ;; Convert to OBJ if the .g file exists
-        obj-result (if g-file-exists
-                     (obj/convert-g-to-obj file-name [model-name]
-                                           {:mesh true, :verbose true, :abs-tess-tol 0.01})
-                     {:status "error" :message "G file was not created in time"})
+        ;; G file created successfully, now process additional formats if requested
+        (let [result {:status "success"
+                      :file-name file-name
+                      :g-result g-result
+                      :g-path g-file-path}
 
-        ;; Wait for the OBJ file to exist
-        obj-file-path (str file-name ".obj")
-        obj-file-exists (wait-for-file obj-file-path 30 100)]
+              ;; Process OBJ format if requested
+              result-with-obj (if (contains? formats :obj)
+                                (let [obj-result (obj/convert-g-to-obj file-name [model-name]
+                                                                       {:mesh true, :verbose true, :abs-tess-tol 0.01})
+                                      obj-file-path (str file-name ".obj")
+                                      obj-file-exists (wait-for-file obj-file-path 30 100)]
+                                  (assoc result
+                                         :obj-result obj-result
+                                         :obj-path (if obj-file-exists obj-file-path nil)))
+                                result)
 
-    (if obj-file-exists
-      {:status "success"
-       :file-name file-name
-       :g-result g-result
-       :obj-result obj-result
-       :obj-path (get obj-result :file (str file-name ".obj"))}
+              ;; Process STL format if requested
+              result-with-stl (if (contains? formats :stl)
+                                (let [stl-result (formats/convert-g-to-stl file-name [model-name] {:abs-tess-tol 0.01})
+                                      stl-file-path (str file-name ".stl")]
+                                  (assoc result-with-obj
+                                         :stl-result stl-result
+                                         :stl-path (when (= (:status stl-result) "success") stl-file-path)))
+                                result-with-obj)
+
+              ;; Process STEP format if requested
+              final-result (if (contains? formats :step)
+                             (let [step-result (formats/convert-g-to-step file-name)
+                                   step-file-path (str file-name ".stp")]
+                               (assoc result-with-stl
+                                      :step-result step-result
+                                      :step-path (when (= (:status step-result) "success") step-file-path)))
+                             result-with-stl)]
+
+          final-result)))
+    (catch Exception e
+      (println "Exception in model creation:" (.getMessage e))
+      (.printStackTrace e)
       {:status "error"
-       :message "OBJ file was not created in time"
-       :g-result g-result
-       :obj-result obj-result})))
+       :message (str "Error creating model: " (.getMessage e))})))
 
 ;; Generic parameter handling
 
@@ -118,9 +151,9 @@
 ;; Generic model creation function
 (defn create-model-from-generator
   "Create a model using a command generator function"
-  [model-type params command-generator]
+  [model-type params command-generator & {:keys [formats] :or {formats #{:g}}}]
   (try
-    (println "Creating" model-type "with params:" params)
+    (println "Creating" model-type "with params:" params "for formats:" formats)
 
     ;; Generate the file name
     (let [file-name (generate-file-name model-type params)
@@ -131,8 +164,8 @@
       (println "Using file name:" file-name)
       (println "Generated commands:" commands)
 
-      ;; Create the actual model
-      (create-model file-name model-type commands))
+      ;; Create the actual model with requested formats
+      (create-model file-name model-type commands :formats formats))
 
     (catch Exception e
       (println "Exception in" model-type "creation:" (.getMessage e))

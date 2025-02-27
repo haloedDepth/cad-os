@@ -1,144 +1,181 @@
 (ns cad-os.commands
   (:require [clojure.string :as str]))
 
-;; Ellipsoidis
+;; Helper functions
+(defn vec->str
+  "Convert a vector of numbers to space-separated string"
+  [v]
+  (str/join " " v))
+
+(defn point->str
+  "Convert a 3D point vector to space-separated string"
+  [[x y z]]
+  (str x " " y " " z))
+
+(defn validate-point
+  "Validate that v is a 3D point vector"
+  [v]
+  (when-not (and (vector? v) (= (count v) 3) (every? number? v))
+    (throw (Exception. "Expected a vector of 3 numbers [x y z]"))))
+
+(defn validate-points
+  "Validate multiple 3D point vectors"
+  [points]
+  (doseq [p points]
+    (validate-point p)))
+
+;; Ellipsoids
 (defn insert-ellipsoid
-  [name
-   center-x center-y center-z
-   front-x front-y front-z
-   right-x right-y right-z
-   up-x up-y up-z]
-  (str "in " name " ell " center-x " " center-y " " center-z " "
-       front-x " " front-y " " front-z " "
-       right-x " " right-y " " right-z " "
-       up-x " " up-y " " up-z))
+  "Create ellipsoid using center and three vectors"
+  [name center front right up]
+  (validate-points [center front right up])
+  (str "in " name " ell "
+       (point->str center) " "
+       (point->str front) " "
+       (point->str right) " "
+       (point->str up)))
 
 (defn insert-sphere
-  [name center-x center-y center-z radius]
-  (str "in " name " sph " center-x " " center-y " " center-z " " radius))
+  "Create sphere using center point and radius"
+  [name center radius]
+  (validate-point center)
+  (str "in " name " sph " (point->str center) " " radius))
 
 (defn insert-ellipsoid-g
-  [name focus1-x focus1-y focus1-z
-   focus2-x focus2-y focus2-z axis-length]
-  (str "in " name " ellg " focus1-x " " focus1-y " " focus1-z " "
-       focus2-x " " focus2-y " " focus2-z " " axis-length))
+  "Create ellipsoid using two foci and axis length"
+  [name focus1 focus2 axis-length]
+  (validate-points [focus1 focus2])
+  (str "in " name " ellg "
+       (point->str focus1) " "
+       (point->str focus2) " "
+       axis-length))
 
 (defn insert-ellipsoid-1
-  [name vertex-x vertex-y vertex-z
-   vectorA-x vectorA-y vectorA-z radius-revolution]
-  (str "in " name " ell1 " vertex-x " " vertex-y " " vertex-z " "
-       vectorA-x " " vectorA-y " " vectorA-z " " radius-revolution))
+  "Create ellipsoid using vertex, vector, and revolution radius"
+  [name vertex vector-a radius-revolution]
+  (validate-points [vertex vector-a])
+  (str "in " name " ell1 "
+       (point->str vertex) " "
+       (point->str vector-a) " "
+       radius-revolution))
 
 (defn insert-elliptical-hyperboloid
-  [name vertex-x vertex-y vertex-z
-   vectorH-x vectorH-y vectorH-z
-   vectorA-x vectorA-y vectorA-z
-   magnitudeB apex-to-asymptotes-distance]
-  (str "in " name " ehy " vertex-x " " vertex-y " " vertex-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " "
-       vectorA-x " " vectorA-y " " vectorA-z " "
-       magnitudeB " " apex-to-asymptotes-distance))
+  "Create elliptical hyperboloid"
+  [name vertex vector-h vector-a magnitude-b apex-distance]
+  (validate-points [vertex vector-h vector-a])
+  (str "in " name " ehy "
+       (point->str vertex) " "
+       (point->str vector-h) " "
+       (point->str vector-a) " "
+       magnitude-b " " apex-distance))
 
 (defn insert-elliptical-paraboloid
-  [name vertex-x vertex-y vertex-z
-   vectorH-x vectorH-y vectorH-z
-   vectorA-x vectorA-y vectorA-z
-   magnitudeB]
-  (str "in " name " epa " vertex-x " " vertex-y " " vertex-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " "
-       vectorA-x " " vectorA-y " " vectorA-z " "
-       magnitudeB))
+  "Create elliptical paraboloid"
+  [name vertex vector-h vector-a magnitude-b]
+  (validate-points [vertex vector-h vector-a])
+  (str "in " name " epa "
+       (point->str vertex) " "
+       (point->str vector-h) " "
+       (point->str vector-a) " "
+       magnitude-b))
 
 ;; Cones and cylinders
 (defn insert-truncated-general-cone
-  [name vertex-x vertex-y vertex-z
-   vectorH-x vectorH-y vectorH-z
-   vectorA-x vectorA-y vectorA-z
-   vectorB-x vectorB-y vectorB-z
-   magnitudeC magnitudeD]
-  (str "in " name " tgc " vertex-x " " vertex-y " " vertex-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " "
-       vectorA-x " " vectorA-y " " vectorA-z " "
-       vectorB-x " " vectorB-y " " vectorB-z " "
-       magnitudeC " " magnitudeD))
+  "Create truncated general cone"
+  [name vertex vector-h vector-a vector-b magnitude-c magnitude-d]
+  (validate-points [vertex vector-h vector-a vector-b])
+  (str "in " name " tgc "
+       (point->str vertex) " "
+       (point->str vector-h) " "
+       (point->str vector-a) " "
+       (point->str vector-b) " "
+       magnitude-c " " magnitude-d))
 
 (defn insert-right-circular-cylinder
-  [name position-x position-y position-z
-   vectorH-x vectorH-y vectorH-z
-   radius]
-  (str "in " name " rcc " position-x " " position-y " " position-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " " radius))
+  "Create right circular cylinder"
+  [name position vector-h radius]
+  (validate-points [position vector-h])
+  (str "in " name " rcc "
+       (point->str position) " "
+       (point->str vector-h) " "
+       radius))
 
 (defn insert-right-elliptical-cylinder
-  [name position-x position-y position-z
-   vectorH-x vectorH-y vectorH-z
-   radius]
-  (str "in " name " rec " position-x " " position-y " " position-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " " radius))
+  "Create right elliptical cylinder"
+  [name position vector-h radius]
+  (validate-points [position vector-h])
+  (str "in " name " rec "
+       (point->str position) " "
+       (point->str vector-h) " "
+       radius))
 
 (defn insert-right-hyperbolic-cylinder
-  [name vertex-x vertex-y vertex-z
-   vectorH-x vectorH-y vectorH-z
-   vectorB-x vectorB-y vectorB-z
-   rectangular-half-width apex-to-asymptotes-distance]
-  (str "in " name " rhc " vertex-x " " vertex-y " " vertex-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " "
-       vectorB-x " " vectorB-y " " vectorB-z " "
-       rectangular-half-width " " apex-to-asymptotes-distance))
+  "Create right hyperbolic cylinder"
+  [name vertex vector-h vector-b rectangular-half-width apex-distance]
+  (validate-points [vertex vector-h vector-b])
+  (str "in " name " rhc "
+       (point->str vertex) " "
+       (point->str vector-h) " "
+       (point->str vector-b) " "
+       rectangular-half-width " " apex-distance))
 
 (defn insert-right-parabolic-cylinder
-  [name vertex-x vertex-y vertex-z
-   vectorH-x vectorH-y vectorH-z
-   vectorB-x vectorB-y vectorB-z
-   rectangular-half-width]
-  (str "in " name " rpc " vertex-x " " vertex-y " " vertex-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " "
-       vectorB-x " " vectorB-y " " vectorB-z " "
+  "Create right parabolic cylinder"
+  [name vertex vector-h vector-b rectangular-half-width]
+  (validate-points [vertex vector-h vector-b])
+  (str "in " name " rpc "
+       (point->str vertex) " "
+       (point->str vector-h) " "
+       (point->str vector-b) " "
        rectangular-half-width))
 
 (defn insert-truncated-elliptical-cone
-  [name vertex-x vertex-y vertex-z
-   vectorH-x vectorH-y vectorH-z
-   vectorA-x vectorA-y vectorA-z
-   vectorB-x vectorB-y vectorB-z]
-  (str "in " name " tec " vertex-x " " vertex-y " " vertex-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " "
-       vectorA-x " " vectorA-y " " vectorA-z " "
-       vectorB-x " " vectorB-y " " vectorB-z))
+  "Create truncated elliptical cone"
+  [name vertex vector-h vector-a vector-b]
+  (validate-points [vertex vector-h vector-a vector-b])
+  (str "in " name " tec "
+       (point->str vertex) " "
+       (point->str vector-h) " "
+       (point->str vector-a) " "
+       (point->str vector-b)))
 
 (defn insert-truncated-right-circular-cone
-  [name vertex-x vertex-y vertex-z
-   vectorH-x vectorH-y vectorH-z
-   radius-base radius-top]
-  (str "in " name " trc " vertex-x " " vertex-y " " vertex-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " "
+  "Create truncated right circular cone"
+  [name vertex vector-h radius-base radius-top]
+  (validate-points [vertex vector-h])
+  (str "in " name " trc "
+       (point->str vertex) " "
+       (point->str vector-h) " "
        radius-base " " radius-top))
 
 ;; Other solids
 (defn insert-torus
-  [name center-x center-y center-z
-   normal-x normal-y normal-z
-   radius-revolution radius-tube]
-  (str "in " name " tor " center-x " " center-y " " center-z " "
-       normal-x " " normal-y " " normal-z " "
+  "Create torus"
+  [name center normal radius-revolution radius-tube]
+  (validate-points [center normal])
+  (str "in " name " tor "
+       (point->str center) " "
+       (point->str normal) " "
        radius-revolution " " radius-tube))
 
 (defn insert-elliptical-torus
-  [name center-x center-y center-z
-   normal-x normal-y normal-z
-   radius-revolution vectorC-x vectorC-y vectorC-z
-   magnitude-semi-minor-axis]
-  (str "in " name " eto " center-x " " center-y " " center-z " "
-       normal-x " " normal-y " " normal-z " "
-       radius-revolution " " vectorC-x " " vectorC-y " " vectorC-z " "
+  "Create elliptical torus"
+  [name center normal radius-revolution vector-c magnitude-semi-minor-axis]
+  (validate-points [center normal vector-c])
+  (str "in " name " eto "
+       (point->str center) " "
+       (point->str normal) " "
+       radius-revolution " "
+       (point->str vector-c) " "
        magnitude-semi-minor-axis))
 
 (defn insert-conical-particle
-  [name vertex-x vertex-y vertex-z
-   vectorH-x vectorH-y vectorH-z
-   radius-v radius-h]
-  (str "in " name " part " vertex-x " " vertex-y " " vertex-z " "
-       vectorH-x " " vectorH-y " " vectorH-z " "
+  "Create conical particle"
+  [name vertex vector-h radius-v radius-h]
+  (validate-points [vertex vector-h])
+  (str "in " name " part "
+       (point->str vertex) " "
+       (point->str vector-h) " "
        radius-v " " radius-h))
 
 ;; Sketch segment formatting and validation
@@ -229,13 +266,16 @@
             {:valid true :invalid-segments []}
             segments)))
 
-(defn insert-sketch [sketch-name v1 v2 v3 a1 a2 a3 b1 b2 b3 vertex-list segments]
+(defn insert-sketch
+  "Create a sketch"
+  [sketch-name v-point a-point b-point vertex-list segments]
+  (validate-points [v-point a-point b-point])
   (let [validation-result (validate-segments vertex-list segments)]
     (if (:valid validation-result)
       (str "put " sketch-name " sketch "
-           "V {" v1 " " v2 " " v3 "} "
-           "A {" a1 " " a2 " " a3 "} "
-           "B {" b1 " " b2 " " b3 "} "
+           "V {" (point->str v-point) "} "
+           "A {" (point->str a-point) "} "
+           "B {" (point->str b-point) "} "
            "VL { " (str/join " " (map #(str "{" (first %) " " (second %) "}") vertex-list)) " } "
            "SL { " (str/join " " (map format-segment segments)) " }")
       (str "Sketch validation failed: "
@@ -244,30 +284,27 @@
                           (:invalid-segments validation-result)))))))
 
 (defn insert-sketch-revolve
-  [name vertex-x vertex-y vertex-z
-   axis-x axis-y axis-z
-   start-x start-y start-z
-   angle
-   sketch-name]
+  "Create a sketch revolve"
+  [name vertex axis start angle sketch-name]
+  (validate-points [vertex axis start])
   (str "in " name " revolve "
-       vertex-x " " vertex-y " " vertex-z " "
-       axis-x " " axis-y " " axis-z " "
-       start-x " " start-y " " start-z " "
+       (point->str vertex) " "
+       (point->str axis) " "
+       (point->str start) " "
        angle " " sketch-name))
 
 (defn insert-sketch-extrude
-  [name vertex-x vertex-y vertex-z
-   Hx Hy Hz
-   Ax Ay Az
-   Bx By Bz
-   sketch-name]
+  "Create a sketch extrude"
+  [name vertex vector-h vector-a vector-b sketch-name]
+  (validate-points [vertex vector-h vector-a vector-b])
   (str "in " name " extrude "
-       vertex-x " " vertex-y " " vertex-z " "
-       Hx " " Hy " " Hz " "
-       Ax " " Ay " " Az " "
-       Bx " " By " " Bz " " sketch-name))
+       (point->str vertex) " "
+       (point->str vector-h) " "
+       (point->str vector-a) " "
+       (point->str vector-b) " "
+       sketch-name))
 
-;; Boolean
+;; Boolean operations
 (defn union [name shape1 shape2]
   (str "r " name " u " shape1 " u " shape2))
 
@@ -277,89 +314,46 @@
 (defn intersection [name shape1 shape2]
   (str "r " name " u " shape1 " + " shape2))
 
-;; Other
-
-(defn copy-object
-  [from-object to-object]
+;; Other operations
+(defn copy-object [from-object to-object]
   (str "cp " from-object " " to-object))
 
 ;; Arbitrary polyhedra
+(defn validate-vertices [vertices expected-count]
+  (when-not (= (count vertices) expected-count)
+    (throw (Exception. (str "Expected " expected-count " vertices, got " (count vertices)))))
+  (validate-points vertices))
+
+(defn vertices->string [vertices]
+  (str/join " " (mapcat point->str vertices)))
+
 (defn insert-arb4
-  [name 
-   v1x v1y v1z 
-   v2x v2y v2z 
-   v3x v3y v3z 
-   v4x v4y v4z]
-  (str "in " name " arb4 "
-       v1x " " v1y " " v1z " "
-       v2x " " v2y " " v2z " "
-       v3x " " v3y " " v3z " "
-       v4x " " v4y " " v4z))
+  "Create an ARB4 primitive with 4 vertices.
+   Each vertex should be a vector of 3 coordinates [x y z]"
+  [name vertices]
+  (validate-vertices vertices 4)
+  (str "in " name " arb4 " (vertices->string vertices)))
 
 (defn insert-arb5
-  [name 
-   v1x v1y v1z 
-   v2x v2y v2z 
-   v3x v3y v3z 
-   v4x v4y v4z 
-   v5x v5y v5z]
-  (str "in " name " arb5 "
-       v1x " " v1y " " v1z " "
-       v2x " " v2y " " v2z " "
-       v3x " " v3y " " v3z " "
-       v4x " " v4y " " v4z " "
-       v5x " " v5y " " v5z))
+  "Create an ARB5 primitive with 5 vertices"
+  [name vertices]
+  (validate-vertices vertices 5)
+  (str "in " name " arb5 " (vertices->string vertices)))
 
 (defn insert-arb6
-  [name 
-   v1x v1y v1z 
-   v2x v2y v2z 
-   v3x v3y v3z 
-   v4x v4y v4z 
-   v5x v5y v5z 
-   v6x v6y v6z]
-  (str "in " name " arb6 "
-       v1x " " v1y " " v1z " "
-       v2x " " v2y " " v2z " "
-       v3x " " v3y " " v3z " "
-       v4x " " v4y " " v4z " "
-       v5x " " v5y " " v5z " "
-       v6x " " v6y " " v6z))
+  "Create an ARB6 primitive with 6 vertices"
+  [name vertices]
+  (validate-vertices vertices 6)
+  (str "in " name " arb6 " (vertices->string vertices)))
 
 (defn insert-arb7
-  [name 
-   v1x v1y v1z 
-   v2x v2y v2z 
-   v3x v3y v3z 
-   v4x v4y v4z 
-   v5x v5y v5z 
-   v6x v6y v6z 
-   v7x v7y v7z]
-  (str "in " name " arb7 "
-       v1x " " v1y " " v1z " "
-       v2x " " v2y " " v2z " "
-       v3x " " v3y " " v3z " "
-       v4x " " v4y " " v4z " "
-       v5x " " v5y " " v5z " "
-       v6x " " v6y " " v6z " "
-       v7x " " v7y " " v7z))
+  "Create an ARB7 primitive with 7 vertices"
+  [name vertices]
+  (validate-vertices vertices 7)
+  (str "in " name " arb7 " (vertices->string vertices)))
 
 (defn insert-arb8
-  [name 
-   v1x v1y v1z 
-   v2x v2y v2z 
-   v3x v3y v3z 
-   v4x v4y v4z 
-   v5x v5y v5z 
-   v6x v6y v6z 
-   v7x v7y v7z 
-   v8x v8y v8z]
-  (str "in " name " arb8 "
-       v1x " " v1y " " v1z " "
-       v2x " " v2y " " v2z " "
-       v3x " " v3y " " v3z " "
-       v4x " " v4y " " v4z " "
-       v5x " " v5y " " v5z " "
-       v6x " " v6y " " v6z " "
-       v7x " " v7y " " v7z " "
-       v8x " " v8y " " v8z))
+  "Create an ARB8 primitive with 8 vertices"
+  [name vertices]
+  (validate-vertices vertices 8)
+  (str "in " name " arb8 " (vertices->string vertices)))

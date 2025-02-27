@@ -52,9 +52,14 @@
 
 ;; Create a model of the specified type with the given parameters
 (defn create-model
-  "Create a model of the specified type with the given parameters"
-  [model-type params]
-  (println "Registry creating model of type:" model-type "with params:" params)
+  "Create a model of the specified type with the given parameters.
+   
+   Parameters:
+   - model-type: Type of model to create
+   - params: Parameters for the model
+   - formats: Set of formats to generate - default is both .g and .obj for web interface"
+  [model-type params & {:keys [formats] :or {formats #{:g :obj}}}]
+  (println "Registry creating model of type:" model-type "with params:" params "for formats:" formats)
   (try
     (if-let [model-info (@model-registry model-type)]
       (let [model-schema (:schema model-info)
@@ -66,8 +71,8 @@
                                  (core/apply-defaults model-schema)
                                  (core/convert-param-types model-schema))]
 
-        ;; Skip validation and just create the model
-        (core/create-model-from-generator model-type processed-params command-generator))
+        ;; Create the model with requested formats
+        (core/create-model-from-generator model-type processed-params command-generator :formats formats))
 
       {:status "error"
        :message (str "Unknown model type: " model-type)})
