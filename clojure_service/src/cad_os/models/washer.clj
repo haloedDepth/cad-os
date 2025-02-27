@@ -18,7 +18,23 @@
     {:name "thickness"
      :type "number"
      :description "Thickness of the washer"
-     :default 2.0}]
+     :default 2.0}
+    ;; Optional position parameters (hidden from UI by default)
+    {:name "position-x"
+     :type "number"
+     :description "X position of the washer"
+     :default 0.0
+     :hidden true}
+    {:name "position-y"
+     :type "number"
+     :description "Y position of the washer"
+     :default 0.0
+     :hidden true}
+    {:name "position-z"
+     :type "number"
+     :description "Z position of the washer"
+     :default 0.0
+     :hidden true}]
 
    ;; Validation rules using expressions
    :validation-rules
@@ -37,15 +53,19 @@
   [params]
   (let [outer-diameter (get params :outer-diameter)
         inner-diameter (get params :inner-diameter)
-        thickness (get params :thickness)]
+        thickness (get params :thickness)
+        position-x (get params :position-x 0)
+        position-y (get params :position-y 0)
+        position-z (get params :position-z 0)]
 
     (println "Generating washer commands with: outer="
-             outer-diameter "inner=" inner-diameter "thickness=" thickness)
+             outer-diameter "inner=" inner-diameter "thickness=" thickness
+             "position=(" position-x "," position-y "," position-z ")")
 
     [(commands/insert-right-circular-cylinder
-      "outer" [0 0 0] [0 0 thickness] (/ outer-diameter 2))
+      "outer" [position-x position-y position-z] [0 0 thickness] (/ outer-diameter 2))
      (commands/insert-right-circular-cylinder
-      "inner" [0 0 0] [0 0 thickness] (/ inner-diameter 2))
+      "inner" [position-x position-y position-z] [0 0 thickness] (/ inner-diameter 2))
      (commands/subtraction "washer" "outer" "inner")]))
 
 ;; Register the washer model

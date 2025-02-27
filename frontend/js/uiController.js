@@ -141,6 +141,13 @@ function generateParameterFields(schema) {
   }
   
   schema.parameters.forEach(param => {
+    // Skip hidden parameters in the UI
+    if (param.hidden) {
+      // Still set default value in params
+      currentModelParams[param.name] = param.default || '';
+      return;
+    }
+      
     const inputId = `param_${param.name}`;
     const div = document.createElement('div');
     

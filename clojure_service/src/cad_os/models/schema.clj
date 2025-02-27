@@ -100,11 +100,18 @@
       :else
       {:valid true})))
 
+(defn filter-visible-parameters
+  "Filter out parameters marked as hidden"
+  [parameters]
+  (filter #(not (:hidden %)) parameters))
+
 (defn enrich-schema
   "Add frontend-specific validation info to schema"
   [schema]
   (let [parameters (:parameters schema)
-        param-names (mapv :name parameters)
+        visible-parameters (filter-visible-parameters parameters)
+        param-names (mapv :name visible-parameters)
         frontend-schema (assoc schema
-                               :param-names param-names)]
+                               :param-names param-names
+                               :parameters visible-parameters)]
     frontend-schema))
