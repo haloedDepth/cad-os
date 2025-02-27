@@ -276,3 +276,90 @@
 
 (defn intersection [name shape1 shape2]
   (str "r " name " u " shape1 " + " shape2))
+
+;; Other
+
+(defn copy-object
+  [from-object to-object]
+  (str "cp " from-object " " to-object))
+
+;; Arbitrary polyhedra
+(defn insert-arb4
+  [name 
+   v1x v1y v1z 
+   v2x v2y v2z 
+   v3x v3y v3z 
+   v4x v4y v4z]
+  (str "in " name " arb4 "
+       v1x " " v1y " " v1z " "
+       v2x " " v2y " " v2z " "
+       v3x " " v3y " " v3z " "
+       v4x " " v4y " " v4z))
+
+(defn insert-arb5
+  [name 
+   v1x v1y v1z 
+   v2x v2y v2z 
+   v3x v3y v3z 
+   v4x v4y v4z 
+   v5x v5y v5z]
+  (str "in " name " arb5 "
+       v1x " " v1y " " v1z " "
+       v2x " " v2y " " v2z " "
+       v3x " " v3y " " v3z " "
+       v4x " " v4y " " v4z " "
+       v5x " " v5y " " v5z))
+
+(defn insert-arb6
+  [name 
+   v1x v1y v1z 
+   v2x v2y v2z 
+   v3x v3y v3z 
+   v4x v4y v4z 
+   v5x v5y v5z 
+   v6x v6y v6z]
+  (str "in " name " arb6 "
+       v1x " " v1y " " v1z " "
+       v2x " " v2y " " v2z " "
+       v3x " " v3y " " v3z " "
+       v4x " " v4y " " v4z " "
+       v5x " " v5y " " v5z " "
+       v6x " " v6y " " v6z))
+
+(defn insert-arb7
+  [name 
+   v1x v1y v1z 
+   v2x v2y v2z 
+   v3x v3y v3z 
+   v4x v4y v4z 
+   v5x v5y v5z 
+   v6x v6y v6z 
+   v7x v7y v7z]
+  (str "in " name " arb7 "
+       v1x " " v1y " " v1z " "
+       v2x " " v2y " " v2z " "
+       v3x " " v3y " " v3z " "
+       v4x " " v4y " " v4z " "
+       v5x " " v5y " " v5z " "
+       v6x " " v6y " " v6z " "
+       v7x " " v7y " " v7z))
+
+(defn insert-arb8
+  [name 
+   v1x v1y v1z 
+   v2x v2y v2z 
+   v3x v3y v3z 
+   v4x v4y v4z 
+   v5x v5y v5z 
+   v6x v6y v6z 
+   v7x v7y v7z 
+   v8x v8y v8z]
+  (str "in " name " arb8 "
+       v1x " " v1y " " v1z " "
+       v2x " " v2y " " v2z " "
+       v3x " " v3y " " v3z " "
+       v4x " " v4y " " v4z " "
+       v5x " " v5y " " v5z " "
+       v6x " " v6y " " v6z " "
+       v7x " " v7y " " v7z " "
+       v8x " " v8y " " v8z))
