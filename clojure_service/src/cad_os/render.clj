@@ -98,3 +98,134 @@
         :message (str "Failed to render file: " g-file)
         :error (:err result)
         :exit-code (:exit result)}))))
+
+;; ======== New Helper Functions for Orbit Views ========
+
+(defn generate-orbit-view
+  "Generate a single orbit view with specified azimuth and elevation angles.
+   
+   Parameters:
+   - file-path: Path to the .g file without extension
+   - objects: Collection of object names within the .g file to render
+   - azimuth: Azimuth angle in degrees (horizontal rotation)
+   - elevation: Elevation angle in degrees (vertical position)
+   - output-file: Output image file path
+   - options: Additional rendering options (like size, white-background, etc.)"
+  [file-path objects azimuth elevation output-file & [extra-options]]
+  (let [view-options (merge
+                      {:azimuth azimuth
+                       :elevation elevation
+                       :output-file output-file
+                       :white-background true
+                       :size 800}
+                      extra-options)]
+    (render-model file-path objects view-options)))
+
+(defn generate-standard-views
+  "Generate the four standard views (front, right, back, left) for a model.
+   
+   Parameters:
+   - file-path: Path to the .g file without extension
+   - objects: Collection of object names within the .g file to render
+   - output-dir: Directory to save the images
+   - base-name: Base filename to use (will append _front, _right, etc.)
+   - options: Additional rendering options"
+  [file-path objects output-dir base-name & [options]]
+  (let [standard-views [{:name "front" :azimuth 0 :elevation 30}
+                        {:name "right" :azimuth 90 :elevation 30}
+                        {:name "back" :azimuth 180 :elevation 30}
+                        {:name "left" :azimuth 270 :elevation 30}]]
+    (doseq [view standard-views]
+      (let [output-file (format "%s/%s_%s.png"
+                                output-dir
+                                base-name
+                                (:name view))]
+        (generate-orbit-view
+         file-path
+         objects
+         (:azimuth view)
+         (:elevation view)
+         output-file
+         options)))))
+
+(defn generate-orbit-views
+  "Generate a complete set of orbit views around a model.
+   
+   Parameters:
+   - file-path: Path to the .g file without extension
+   - objects: Collection of object names within the .g file to render
+   - output-dir: Directory to save the images
+   - base-name: Base filename to use
+   - options: Map of options including:
+     - :azimuths - Vector of azimuth angles (default [0 45 90 135 180 225 270 315])
+     - :elevations - Vector of elevation angles (default [0 30 60 90])
+     - :render-options - Additional rendering options"
+  [file-path objects output-dir base-name & [{:keys [azimuths elevations render-options]
+                                              :or {azimuths [0 45 90 135 180 225 270 315]
+                                                   elevations [0 30 60 90]
+                                                   render-options {:size 800 :white-background true}}}]]
+  ;; Ensure output directory exists
+  (let [dir (io/file output-dir)]
+    (when-not (.exists dir)
+      (.mkdirs dir)))
+
+  ;; Generate each view
+  (doseq [azimuth azimuths
+          elevation elevations]
+    (let [output-file (format "%s/%s_az%d_el%d.png"
+                              output-dir
+                              base-name
+                              azimuth
+                              elevation)]
+      (println (str "Rendering: azimuth=" azimuth ", elevation=" elevation))
+      (generate-orbit-view
+       file-path
+       objects
+       azimuth
+       elevation
+       output-file
+       render-options))))
+
+(defn generate-orbit-animation-frames
+  "Generate a sequence of frames for animating orbit rotation.
+   
+   Parameters:
+   - file-path: Path to the .g file without extension
+   - objects: Collection of object names within the .g file to render
+   - output-dir: Directory to save the images
+   - base-name: Base filename to use
+   - options: Map of options including:
+     - :start-azimuth - Starting azimuth angle (default 0)
+     - :end-azimuth - Ending azimuth angle (default 360)
+     - :frame-count - Number of frames to generate (default 36)
+     - :elevation - Elevation angle to use (default 30)
+     - :render-options - Additional rendering options"
+  [file-path objects output-dir base-name & [{:keys [start-azimuth end-azimuth frame-count elevation render-options]
+                                              :or {start-azimuth 0
+                                                   end-azimuth 360
+                                                   frame-count 36
+                                                   elevation 30
+                                                   render-options {:size 800 :white-background true}}}]]
+  ;; Ensure output directory exists
+  (let [dir (io/file output-dir)]
+    (when-not (.exists dir)
+      (.mkdirs dir)))
+
+  ;; Calculate azimuth step
+  (let [azimuth-step (/ (- end-azimuth start-azimuth) frame-count)]
+
+    ;; Generate each frame
+    (doseq [frame (range frame-count)]
+      (let [azimuth (+ start-azimuth (* frame azimuth-step))
+            output-file (format "%s/%s_frame%03d.png"
+                                output-dir
+                                base-name
+                                frame)]
+        (println (str "Rendering frame " frame " of " frame-count ": azimuth=" azimuth))
+        (generate-orbit-view
+         file-path
+         objects
+         azimuth
+         elevation
+         output-file
+         render-options)))))
