@@ -143,56 +143,91 @@
         {:status 404
          :headers {"Content-Type" "application/json"}
          :body {:error (str "File not found: " (.getAbsolutePath obj-file))}})))
+
+  ;; NEW ROUTE: Add endpoint for rendering with default view (front)
+  (GET "/render/:filename" [filename :as request]
+    (println "Handling /render/" filename " request with default view")
+    (let [model-type (get-in request [:params :model_type])
+          size (get-in request [:params :size] 800)
+          white-bg (get-in request [:params :white_background] true)
+
+          ;; Create a temporary directory for rendering
+          output-dir (str "render_output/" filename)
+          _ (io/make-parents (str output-dir "/placeholder"))
+
+          ;; Generate the view with default (front) view
+          render-options {:size size
+                          :white-background white-bg}
+
+          ;; Call the render function with default front view
+          result (render/generate-orbit-view
+                  filename
+                  (if model-type [model-type] [])  ;; Handle nil model-type properly
+                  0  ;; Default azimuth for front view
+                  30 ;; Default elevation for front view
+                  (str output-dir "/" filename "_front.png")
+                  render-options)]
+
+      (if (= (:status result) "success")
+        {:status 200
+         :headers {"Content-Type" "image/png"
+                   "Content-Disposition" (str "attachment; filename=\""
+                                              filename "_front.png\"")}
+         :body (io/file (:file result))}
+        {:status 500
+         :headers {"Content-Type" "application/json"}
+         :body {:error (:message result)}})))
+
   (GET "/render/:filename/:view" [filename view :as request]
     (println "Handling /render/" filename "/" view "request")
     (let [model-type (get-in request [:params :model_type])
           size (get-in request [:params :size] 800)
           white-bg (get-in request [:params :white_background] true)
-  
+
           ;; Determine views based on the view parameter
           view-keyword (keyword view)
-  
+
           ;; Create a temporary directory for rendering
           output-dir (str "render_output/" filename)
           _ (io/make-parents (str output-dir "/placeholder"))
-  
+
           ;; Generate the view
           render-options {:size size
                           :white-background white-bg}
-  
+
           ;; Call the render function
           result (case view-keyword
                    :front (render/generate-orbit-view
                            filename
-                           [model-type]
+                           (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
                            0
                            30
                            (str output-dir "/" filename "_front.png")
                            render-options)
                    :right (render/generate-orbit-view
                            filename
-                           [model-type]
+                           (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
                            90
                            30
                            (str output-dir "/" filename "_right.png")
                            render-options)
                    :back (render/generate-orbit-view
                           filename
-                          [model-type]
+                          (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
                           180
                           30
                           (str output-dir "/" filename "_back.png")
                           render-options)
                    :left (render/generate-orbit-view
                           filename
-                          [model-type]
+                          (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
                           270
                           30
                           (str output-dir "/" filename "_left.png")
                           render-options)
                    :top (render/generate-orbit-view
                          filename
-                         [model-type]
+                         (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
                          0
                          90
                          (str output-dir "/" filename "_top.png")
@@ -200,12 +235,12 @@
                    ;; Default to front view
                    (render/generate-orbit-view
                     filename
-                    [model-type]
+                    (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
                     0
                     30
                     (str output-dir "/" filename "_front.png")
                     render-options))]
-  
+
       (if (= (:status result) "success")
         {:status 200
          :headers {"Content-Type" "image/png"
@@ -234,4 +269,4 @@
   (println "Starting CAD-OS API server on port 3000...")
   (println "Available model types:" (registry/get-model-types))
   (run-jetty app {:port 3000 :join? false})
-  (println "Server started!"))
+  (println "Server started!")) 
