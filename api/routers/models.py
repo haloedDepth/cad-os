@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Response, Body
 from typing import Dict, Any
 import logging
 from services import clojure_service
+from utils import filename_utils
 
 router = APIRouter(
     prefix="/api",
@@ -58,7 +59,7 @@ async def generate_model(model_type: str, params: Dict[str, Any] = Body(...)):
 
 @router.get("/models/{filename}")
 async def get_model(filename: str):
-    """Retrieve a model file by filename"""
+    """Retrieve a model file by filename (defaults to OBJ format)"""
     result = await clojure_service.get_model_file(filename)
     
     if result["status"] != 200:
@@ -67,10 +68,14 @@ async def get_model(filename: str):
             detail=f"Model not found: {filename}"
         )
     
+    # Use obj as the default extension
+    base_name = filename_utils.base_filename(filename)
+    file_name = f"{base_name}.obj"
+    
     return Response(
         content=result["content"],
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={filename}.obj"}
+        headers={"Content-Disposition": f"attachment; filename={file_name}"}
     )
 
 @router.get("/models/{filename}/{format}")
@@ -100,10 +105,13 @@ async def get_model_with_format(filename: str, format: str):
             detail=f"Model not found: {filename} in format {format}"
         )
     
+    base_name = filename_utils.base_filename(filename)
+    file_name = f"{base_name}.{format_to_ext[format]}"
+    
     return Response(
         content=result["content"],
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={filename}.{format_to_ext[format]}"}
+        headers={"Content-Disposition": f"attachment; filename={file_name}"}
     )
 
 @router.get("/render/{filename}")

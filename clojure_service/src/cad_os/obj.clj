@@ -1,6 +1,7 @@
 (ns cad-os.obj
   (:require [clojure.java.shell :refer [sh]]
             [clojure.java.io :as io]
+            [cad-os.filename :as filename]
             [clojure.string :as str]))
 
 (defn wait-for-command-completion
@@ -39,9 +40,9 @@
    (convert-g-to-obj file-path objects {}))
 
   ([file-path objects options]
-   (let [file-path (str/replace file-path #"\.g$" "")  ; Remove .g extension if present
-         g-file (str file-path ".g")                   ; Add .g extension
-         output-file (or (:output-file options) (str file-path ".obj"))
+   (let [base-path (filename/base-filename file-path)
+         g-file (filename/with-extension base-path :g)
+         output-file (or (:output-file options) (filename/with-extension base-path :obj))
 
          ; Build command arguments
          cmd-args (cond-> []

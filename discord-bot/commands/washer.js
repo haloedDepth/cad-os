@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const cadService = require('../services/cad-service');
 const path = require('path');
+const filenameUtils = require('../utils/filename-utils');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -48,9 +49,8 @@ module.exports = {
       const result = await cadService.generateModel('washer', params);
       
       // Extract the filename from the result
-      const fileName = result.obj_path?.replace(/\.obj$/i, '') || 
-                       result.obj_result?.file?.replace(/\.obj$/i, '') ||
-                       `washer_${outerDiameter}_${innerDiameter}_${thickness}`;
+      const fileName = result.fileName || filenameUtils.generateModelFilename('washer', params);
+      console.log(`Using filename: ${fileName}`);
       
       // Try to render the model and get an image
       let imagePath = null;
@@ -85,7 +85,21 @@ module.exports = {
       
     } catch (error) {
       console.error('Error handling washer command:', error);
-      await interaction.editReply(`Error: ${error.message}`);
+      
+      // Craft a more helpful error message
+      let errorMessage = `Error: ${error.message}\n\nTroubleshooting:\n`;
+      
+      if (error.message.includes('ECONNREFUSED') && error.message.includes('::1')) {
+        errorMessage += "• IPv6 connection issue detected. The server is configured to use IPv6 (::1) but can't connect.\n";
+        errorMessage += "• Try updating your .env file to set API_BASE_URL=http://127.0.0.1:8000/api to force IPv4.\n";
+      } else if (error.message.includes('ECONNREFUSED') && error.message.includes('127.0.0.1')) {
+        errorMessage += "• Make sure the FastAPI server is running on port 8000.\n";
+        errorMessage += "• Check that there are no firewall rules blocking the connection.\n";
+      }
+      
+      errorMessage += "• Verify that both API and Clojure services are running.";
+      
+      await interaction.editReply(errorMessage);
     }
   },
 };

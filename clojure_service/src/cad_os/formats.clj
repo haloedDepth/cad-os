@@ -1,6 +1,7 @@
 (ns cad-os.formats
   (:require [clojure.java.shell :refer [sh]]
             [clojure.java.io :as io]
+            [cad-os.filename :as filename]
             [clojure.string :as str]))
 
 (defn wait-for-file
@@ -22,9 +23,9 @@
    (convert-g-to-stl file-path objects {}))
 
   ([file-path objects options]
-   (let [file-path (str/replace file-path #"\.g$" "")  ; Remove .g extension if present
-         g-file (str file-path ".g")                   ; Add .g extension
-         output-file (or (:output-file options) (str file-path ".stl"))
+   (let [base-path (filename/base-filename file-path)
+         g-file (filename/with-extension base-path :g)
+         output-file (or (:output-file options) (filename/with-extension base-path :stl))
 
          ; Build command arguments
          cmd-args (cond-> []
@@ -72,9 +73,9 @@
    (convert-g-to-step file-path {}))
 
   ([file-path options]
-   (let [file-path (str/replace file-path #"\.g$" "")  ; Remove .g extension if present
-         g-file (str file-path ".g")                   ; Add .g extension
-         output-file (or (:output-file options) (str file-path ".stp"))
+   (let [base-path (filename/base-filename file-path)
+         g-file (filename/with-extension base-path :g)
+         output-file (or (:output-file options) (filename/with-extension base-path :step))
 
          ; Build command arguments
          cmd-args ["-o" output-file g-file]
@@ -103,81 +104,31 @@
         :error (:err result)
         :exit-code (:exit result)}))))
 
-;; Function to extract the model name from a filename pattern
-(defn extract-model-name
-  "Extract the model name from a filename pattern like 'washer_10_6_2'"
-  [filename]
-  (let [parts (str/split filename #"_")]
-    (first parts)))
-
 ;; Ensure a file exists in the specified format
 (defn ensure-format
   "Ensure a file exists in the specified format, converting if necessary"
   [file-name format]
-  (let [;; Don't attempt any filename manipulation during this step
-        ;; Use ls command to find the actual G file that matches our pattern
-        _ (println "Looking for G file matching:" file-name)
-        ls-result (sh "ls" "-la")
-        _ (println "LS result:" (:out ls-result))
+  (let [base-name (filename/base-filename file-name)
+        model-type (filename/extract-model-type file-name)
+        target-file (filename/with-extension base-name format)]
 
-        ;; The .g file is created during model generation and should exist
-        g-file (str file-name ".g")
-        _ (println "Looking for G file:" g-file)
+    (println "Ensuring format" format "for file" base-name "model type" model-type)
 
-        ;; Extract just the model type (cylinder, washer, etc.) from the filename
-        model-name (first (str/split (.getName (io/file file-name)) #"_"))
-        _ (println "Model name extracted:" model-name)
+    ;; Check if the target file exists
+    (if (.exists (io/file target-file))
+      {:status "success" :file target-file}
 
-        target-file (case format
-                      :g g-file
-                      :obj (str file-name ".obj")
-                      :stl (str file-name ".stl")
-                      :step (str file-name ".stp"))]
-    (println "Ensuring format" format "for file" file-name "model name" model-name "target-file" target-file)
-
-    ;; Check if the files actually exist in the current directory
-    (println "Current directory:" (.getAbsolutePath (io/file ".")))
-    (println "G file exists?:" (.exists (io/file g-file)))
-
-    ;; Look for similar files
-    (let [dir-files (into [] (.list (io/file ".")))
-          g-files (filter #(.endsWith % ".g") dir-files)
-          ;; Try to find a matching G file by pattern
-          pattern-base (str/replace file-name #"\..*$" "")
-          matching-g-file (first (filter #(.startsWith % pattern-base) g-files))]
-      (println "Found G files in directory:" g-files)
-      (println "Pattern we're looking for:" pattern-base)
-      (println "Matching G file found:" matching-g-file)
-
-      ;; If we found a matching G file, use that instead
-      (let [actual-g-file (if (and matching-g-file (not (.exists (io/file g-file))))
-                            matching-g-file
-                            g-file)
-            actual-base-name (str/replace actual-g-file #"\.g$" "")]
-        (println "Using actual G file:" actual-g-file)
-
-        (let [actual-target-file (case format
-                                   :g actual-g-file
-                                   :obj (str actual-base-name ".obj")
-                                   :stl (str actual-base-name ".stl")
-                                   :step (str actual-base-name ".stp"))]
-          (println "Adjusted target file:" actual-target-file)
-          (println "Adjusted target file:" actual-target-file)
-
-          (if (.exists (io/file actual-target-file))
-            {:status "success" :file actual-target-file}
-            (case format
-              :g (if (.exists (io/file actual-g-file))
-                   {:status "success" :file actual-g-file}
-                   {:status "error" :message (str "G file not found: " actual-g-file)})
-              :obj (if (.exists (io/file actual-g-file))
-                     (let [result (require 'cad-os.obj)
-                           obj-fn (resolve 'cad-os.obj/convert-g-to-obj)]
-                       (obj-fn actual-base-name [model-name] {:mesh true, :abs-tess-tol 0.01}))
-                     {:status "error" :message (str "G file not found for OBJ conversion: " actual-g-file)})
-              :stl (if (.exists (io/file actual-g-file))
-                     (convert-g-to-stl actual-base-name [model-name] {:abs-tess-tol 0.01})
-                     {:status "error" :message (str "G file not found for STL conversion: " actual-g-file)})
-              :step (if (.exists (io/file actual-g-file))
-                      (convert-g-to-step actual-base-name)
-                      {:status "error" :message (str "G file not found for STEP conversion: " actual-g-file)}))))))))
+      ;; If not, check if g file exists and convert
+      (let [g-file (filename/with-extension base-name :g)]
+        (if (.exists (io/file g-file))
+          (case format
+            :g {:status "success" :file g-file}
+            :obj (do
+                   (println "Converting G to OBJ:" base-name model-type)
+                   (let [result (require 'cad-os.obj)
+                         obj-fn (resolve 'cad-os.obj/convert-g-to-obj)]
+                     (obj-fn base-name [model-type] {:mesh true, :abs-tess-tol 0.01})))
+            :stl (convert-g-to-stl base-name [model-type] {:abs-tess-tol 0.01})
+            :step (convert-g-to-step base-name))
+          {:status "error"
+           :message (str "G file not found for conversion: " g-file)})))))

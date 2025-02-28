@@ -1,6 +1,7 @@
 (ns cad-os.render
   (:require [clojure.java.shell :refer [sh]]
             [clojure.java.io :as io]
+            [cad-os.filename :as filename]
             [clojure.string :as str]))
 
 (defn wait-for-file
@@ -46,9 +47,9 @@
    (render-model file-path objects {}))
 
   ([file-path objects options]
-   (let [file-path (str/replace file-path #"\.g$" "")  ; Remove .g extension if present
-         g-file (str file-path ".g")                   ; Add .g extension
-         default-output-file (str file-path ".png")    ; Default to PNG output
+   (let [base-path (filename/base-filename file-path)
+         g-file (filename/with-extension base-path :g)
+         default-output-file (str base-path ".png")
          output-file (or (:output-file options) default-output-file)
 
          ; Build command arguments
@@ -99,7 +100,7 @@
         :error (:err result)
         :exit-code (:exit result)}))))
 
-;; ======== New Helper Functions for Orbit Views ========
+;; ======== Helper Functions for Orbit Views ========
 
 (defn generate-orbit-view
   "Generate a single orbit view with specified azimuth and elevation angles.

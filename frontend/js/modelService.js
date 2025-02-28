@@ -1,4 +1,5 @@
 // API Service for model operations
+import * as filenameUtils from './filenameUtils.js';
 
 /**
  * Load all available model types
@@ -186,18 +187,28 @@ export async function generateModel(modelType, params) {
     const data = await response.json();
     console.log('Model generation response:', data);
     
-    // Check if we have an obj_path or "obj-path" property (both formats)
-    const objPath = data.obj_path || data["obj-path"];
+    // Extract the base filename without extension from the response
+    // Check all possible paths where the filename could be returned
+    let fileName = null;
     
-    if (objPath) {
-      console.log(`OBJ file path: ${objPath}`);
-      // Strip .obj extension if present
-      const fileName = objPath.replace(/\.obj$/i, '');
-      return fileName;
+    if (data.obj_path) {
+      fileName = filenameUtils.baseFilename(data.obj_path);
+    } else if (data["obj-path"]) {
+      fileName = filenameUtils.baseFilename(data["obj-path"]);
+    } else if (data.obj_result && data.obj_result.file) {
+      fileName = filenameUtils.baseFilename(data.obj_result.file);
+    } else if (data["obj-result"] && data["obj-result"].file) {
+      fileName = filenameUtils.baseFilename(data["obj-result"].file);
+    } else if (data.file_name) {
+      fileName = data.file_name;
     } else {
-      console.error('Response data:', data);
-      throw new Error('No OBJ file path returned from server');
+      // If no filename is found, generate one from the model type and parameters
+      // This shouldn't happen with the new implementation but we'll keep it as a fallback
+      fileName = filenameUtils.generateModelFilename(modelType, params);
     }
+    
+    console.log(`Extracted filename: ${fileName}`);
+    return fileName;
   } catch (error) {
     console.error('Error generating model:', error);
     throw error;
@@ -210,22 +221,14 @@ export async function generateModel(modelType, params) {
  * @param {string} format - Format to download (obj, stl, step, g)
  */
 export function downloadModel(fileName, format) {
-  // Format to file extension mapping
-  const formatToExt = {
-    'obj': 'obj',
-    'stl': 'stl',
-    'step': 'stp',
-    'g': 'g'
-  };
-  
-  // Create a download link
+  // Create a download link with the correctly formatted URL
   const downloadUrl = `/api/models/${fileName}/${format}`;
   console.log(`Downloading from: ${downloadUrl}`);
   
   // Create and click a temporary link
   const link = document.createElement('a');
   link.href = downloadUrl;
-  link.download = `${fileName}.${formatToExt[format]}`;
+  link.download = filenameUtils.withExtension(fileName, format);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

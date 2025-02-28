@@ -1,5 +1,6 @@
 // UI Controller - handles UI interactions and form management
 import { validateParameters, prepareParameters, evaluateExpression } from './validator.js';
+import * as filenameUtils from './filenameUtils.js';
 
 // Current model state
 let currentModelType = '';

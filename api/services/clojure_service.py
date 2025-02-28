@@ -1,6 +1,8 @@
 import httpx
 from config import CLOJURE_SERVICE_URL, DEFAULT_MODEL_TYPES
 import logging
+import os
+from utils import filename_utils
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,9 @@ async def generate_model(model_type: str, params: dict):
                 
                 # Make sure we're passing back all necessary information
                 if "obj_result" in result and "file" in result["obj_result"]:
-                    result["obj_path"] = result["obj_result"]["file"]
+                    obj_path = result["obj_result"]["file"]
+                    # Simply pass the full path without manipulating extensions
+                    result["obj_path"] = obj_path
                 
                 return {"status": response_status, "data": result}
             else:
@@ -99,20 +103,21 @@ async def generate_model(model_type: str, params: dict):
 async def get_model_file(filename: str, format: str = None):
     """Retrieve a model file by filename and optional format"""
     try:
+        base_name = filename_utils.base_filename(filename)
+        
         # Determine URL based on whether format is provided
         if format:
-            url = f"{CLOJURE_SERVICE_URL}/models/{filename}/{format}"
+            url = f"{CLOJURE_SERVICE_URL}/models/{base_name}/{format}"
         else:
-            # Ensure we're requesting with .obj extension for the default case
-            request_filename = filename if filename.endswith(".obj") else f"{filename}.obj"
-            url = f"{CLOJURE_SERVICE_URL}/models/{request_filename}"
+            # Use obj format by default
+            url = f"{CLOJURE_SERVICE_URL}/models/{base_name}/obj"
         
         logger.info(f"Requesting model file: {url}")
         async with httpx.AsyncClient() as client:
             response = await client.get(url, follow_redirects=True)
             
             if response.status_code == 200:
-                return {"status": 200, "content": response.content, "filename": filename}
+                return {"status": 200, "content": response.content, "filename": base_name}
             else:
                 logger.warning(f"Error from Clojure service: {response.status_code} - {response.text}")
                 return {"status": response.status_code, "error": "Model not found"}
@@ -148,17 +153,13 @@ async def get_all_schemas():
 async def render_model(filename: str, model_type: str = None, view: str = "front"):
     """Render a model and return the image"""
     try:
-        logger.info(f"Requesting render for model: {filename}, type: {model_type}, view: {view}")
+        base_name = filename_utils.base_filename(filename)
+        logger.info(f"Requesting render for model: {base_name}, type: {model_type}, view: {view}")
         
-        # Strip off any file extension
-        base_filename = filename.split('.')[0] if '.' in filename else filename
-        
-        # Model type is needed for the rendering process
+        # If model_type is not provided, extract it from the filename
         if not model_type:
-            # Try to extract model type from filename (e.g., "washer_10_5_2" -> "washer")
-            parts = base_filename.split('_')
-            if parts:
-                model_type = parts[0]
+            model_type = filename_utils.extract_model_type(base_name)
+            logger.info(f"Extracted model type from filename: {model_type}")
         
         # Create a temporary directory for the output if it doesn't exist
         output_dir = "render_output"
@@ -166,11 +167,11 @@ async def render_model(filename: str, model_type: str = None, view: str = "front
             os.makedirs(output_dir)
             
         # Determine the output image path
-        image_name = f"{base_filename}_{view}.png"
+        image_name = f"{base_name}_{view}.png"
         image_path = os.path.join(output_dir, image_name)
         
         # Build the URL for the Clojure service render endpoint
-        url = f"{CLOJURE_SERVICE_URL}/render/{base_filename}"
+        url = f"{CLOJURE_SERVICE_URL}/render/{base_name}"
         if view:
             url += f"/{view}"
         

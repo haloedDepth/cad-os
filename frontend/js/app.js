@@ -2,6 +2,7 @@ import { initViewer, loadModel } from './viewer.js';
 import { loadModelTypes, loadAllSchemas, loadModelSchema, generateModel, downloadModel } from './modelService.js';
 import * as ui from './uiController.js';
 import { validateParameters } from './validator.js';
+import * as filenameUtils from './filenameUtils.js';
 
 // Initialize the application
 async function initApp() {
@@ -118,11 +119,11 @@ async function handleGenerateModel() {
     // Generate the model
     const fileName = await generateModel(modelType, paramsToSend);
     
-    // Show loading status
-    ui.showStatus('Model generated. Loading...', 'loading');
-    
     // Store the filename
     ui.setCurrentModelFileName(fileName);
+    
+    // Show loading status
+    ui.showStatus('Model generated. Loading...', 'loading');
     
     // Wait a bit before loading to let the API service have time to access the file
     setTimeout(() => {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import * as filenameUtils from './filenameUtils.js';
 
 // Three.js variables
 let renderer, scene, camera, controls, currentModel;
@@ -75,11 +76,15 @@ export function loadModel(fileName, onSuccess, onError) {
     scene.remove(currentModel);
   }
   
-  console.log(`Loading model from: /api/models/${fileName}`);
+  // Ensure we're using the base filename and then add obj extension
+  const baseName = filenameUtils.baseFilename(fileName);
+  const objFilePath = `/api/models/${baseName}/obj`;
+  
+  console.log(`Loading model from: ${objFilePath}`);
   const loader = new OBJLoader();
   
   loader.load(
-    `/api/models/${fileName}`,
+    objFilePath,
     (obj) => {
       console.log('OBJ loaded successfully:', obj);
       

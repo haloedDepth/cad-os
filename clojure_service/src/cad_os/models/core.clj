@@ -5,6 +5,7 @@
             [cad-os.obj :as obj]
             [cad-os.models.schema :as schema]
             [cad-os.formats :as formats]
+            [cad-os.filename :as filename]
             [clojure.java.io :as io]))
 
 (def mged-path "/usr/brlcad/rel-7.40.3/bin/mged")
@@ -25,25 +26,26 @@
 (defn create-g-file
   "Create a .g file from a list of commands"
   [file-name commands]
-  (let [joined (s/join ";" commands)]
+  (let [g-file-path (filename/with-extension file-name :g)
+        joined (s/join ";" commands)]
     (println "Creating model:" file-name)
-    (println "Running:" mged-path "-c" (str file-name ".g") joined)
-    (let [shell-result (sh mged-path "-c" (str file-name ".g") joined)]
-      (assoc shell-result :file (str file-name ".g")))))
+    (println "Running:" mged-path "-c" g-file-path joined)
+    (let [shell-result (sh mged-path "-c" g-file-path joined)]
+      (assoc shell-result :file g-file-path))))
 
 (defn create-model
   "Create a model with optional conversion to requested formats
    
    Parameters:
-   - file-name: Base name for the model files
+   - file-name: Base name for the model files (without extension)
    - model-name: Name of the model inside the .g file
    - commands: List of commands to create the model
    - formats: Set of formats to generate (:g, :obj, :stl, :step)"
   [file-name model-name commands & {:keys [formats] :or {formats #{:g}}}]
   (try
     ;; Create the .g file (always required as base format)
-    (let [g-result (create-g-file file-name commands)
-          g-file-path (str file-name ".g")
+    (let [g-file-path (filename/with-extension file-name :g)
+          g-result (create-g-file file-name commands)
           g-file-exists (wait-for-file g-file-path 30 100)]
 
       (if-not g-file-exists
@@ -60,9 +62,9 @@
 
               ;; Process OBJ format if requested
               result-with-obj (if (contains? formats :obj)
-                                (let [obj-result (obj/convert-g-to-obj file-name [model-name]
+                                (let [obj-file-path (filename/with-extension file-name :obj)
+                                      obj-result (obj/convert-g-to-obj file-name [model-name]
                                                                        {:mesh true, :verbose true, :abs-tess-tol 0.01})
-                                      obj-file-path (str file-name ".obj")
                                       obj-file-exists (wait-for-file obj-file-path 30 100)]
                                   (assoc result
                                          :obj-result obj-result
@@ -71,8 +73,8 @@
 
               ;; Process STL format if requested
               result-with-stl (if (contains? formats :stl)
-                                (let [stl-result (formats/convert-g-to-stl file-name [model-name] {:abs-tess-tol 0.01})
-                                      stl-file-path (str file-name ".stl")]
+                                (let [stl-file-path (filename/with-extension file-name :stl)
+                                      stl-result (formats/convert-g-to-stl file-name [model-name] {:abs-tess-tol 0.01})]
                                   (assoc result-with-obj
                                          :stl-result stl-result
                                          :stl-path (when (= (:status stl-result) "success") stl-file-path)))
@@ -80,8 +82,8 @@
 
               ;; Process STEP format if requested
               final-result (if (contains? formats :step)
-                             (let [step-result (formats/convert-g-to-step file-name)
-                                   step-file-path (str file-name ".stp")]
+                             (let [step-file-path (filename/with-extension file-name :step)
+                                   step-result (formats/convert-g-to-step file-name)]
                                (assoc result-with-stl
                                       :step-result step-result
                                       :step-path (when (= (:status step-result) "success") step-file-path)))
@@ -141,13 +143,6 @@
           params
           (:parameters schema)))
 
-(defn generate-file-name
-  "Generate a standard file name based on model type and parameters"
-  [model-type params]
-  (let [param-values (vals (select-keys params (keys params)))
-        param-str (s/join "_" param-values)]
-    (str model-type "_" param-str)))
-
 ;; Generic model creation function
 (defn create-model-from-generator
   "Create a model using a command generator function"
@@ -155,8 +150,8 @@
   (try
     (println "Creating" model-type "with params:" params "for formats:" formats)
 
-    ;; Generate the file name
-    (let [file-name (generate-file-name model-type params)
+    ;; Generate the file name using our utility function
+    (let [file-name (filename/generate-model-filename model-type params)
 
           ;; Generate commands for the model
           commands (command-generator params)]

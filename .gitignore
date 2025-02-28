@@ -1,1 +1,34 @@
+# Node.js
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Clojure
+.clj-kondo/
+.lsp/
+.cpcache/
+
+# Environment Variables
 .env
+
+# Render output or temporary files
+render_output/
+temp/
+
+# Logs and Debugging
+*.log
+logs/
+debug.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Dependency files (Clojure)
+deps.edn
+
+# Package lock files (optional)
+package-lock.json

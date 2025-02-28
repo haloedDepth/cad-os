@@ -3,6 +3,7 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const filenameUtils = require('../utils/filename-utils');
 
 class CADService {
   constructor() {
@@ -74,7 +75,31 @@ class CADService {
       
       console.log('Model generation successful. Response status:', response.status);
       console.log('Response data:', response.data);
-      return response.data;
+      
+      // Extract the filename from response
+      let fileName = null;
+      
+      if (response.data.obj_path) {
+        fileName = filenameUtils.baseFilename(response.data.obj_path);
+      } else if (response.data["obj-path"]) {
+        fileName = filenameUtils.baseFilename(response.data["obj-path"]);
+      } else if (response.data.obj_result && response.data.obj_result.file) {
+        fileName = filenameUtils.baseFilename(response.data.obj_result.file);
+      } else if (response.data["obj-result"] && response.data["obj-result"].file) {
+        fileName = filenameUtils.baseFilename(response.data["obj-result"].file);
+      } else if (response.data.file_name) {
+        fileName = response.data.file_name;
+      } else {
+        // Generate a filename from the model type and parameters if not found
+        fileName = filenameUtils.generateModelFilename(modelType, params);
+      }
+      
+      console.log(`Generated model filename: ${fileName}`);
+      
+      return {
+        ...response.data,
+        fileName: fileName
+      };
     } catch (error) {
       console.error('Error details:', {
         code: error.code || 'No error code',
@@ -97,8 +122,11 @@ class CADService {
 
   async renderModel(fileName, modelType) {
     try {
-      const url = `${this.apiBaseUrl}/render/${fileName}?model_type=${modelType}&view=front`;
-      console.log(`Requesting image render for ${fileName}, model type: ${modelType}`);
+      // Ensure we're using just the base filename without extension
+      const baseName = filenameUtils.baseFilename(fileName);
+      const url = `${this.apiBaseUrl}/render/${baseName}?model_type=${modelType}&view=front`;
+      
+      console.log(`Requesting image render for ${baseName}, model type: ${modelType}`);
       console.log(`Making GET request to: ${url}`);
       
       const response = await axios.get(url, { responseType: 'arraybuffer' });
@@ -106,7 +134,7 @@ class CADService {
       console.log('Render successful. Response status:', response.status);
       
       // Save the image temporarily
-      const tempImagePath = path.join(this.tempDir, `${fileName}_render.png`);
+      const tempImagePath = path.join(this.tempDir, `${baseName}_render.png`);
       fs.writeFileSync(tempImagePath, response.data);
       console.log(`Saved render to: ${tempImagePath}`);
       
@@ -134,8 +162,11 @@ class CADService {
   // A workaround method to directly interact with the Clojure service for rendering
   async directRenderModel(fileName, modelType) {
     try {
-      const url = `${this.clojureServiceUrl}/direct-render/${fileName}?model_type=${modelType}&view=front&size=800`;
-      console.log(`Requesting direct render for ${fileName}, model type: ${modelType}`);
+      // Ensure we're using just the base filename without extension
+      const baseName = filenameUtils.baseFilename(fileName);
+      const url = `${this.clojureServiceUrl}/direct-render/${baseName}?model_type=${modelType}&view=front&size=800`;
+      
+      console.log(`Requesting direct render for ${baseName}, model type: ${modelType}`);
       console.log(`Making GET request to: ${url}`);
       
       const response = await axios.get(url, { responseType: 'arraybuffer' });
@@ -143,7 +174,7 @@ class CADService {
       console.log('Direct render successful. Response status:', response.status);
       
       // Save the image temporarily
-      const tempImagePath = path.join(this.tempDir, `${fileName}_direct_render.png`);
+      const tempImagePath = path.join(this.tempDir, `${baseName}_direct_render.png`);
       fs.writeFileSync(tempImagePath, response.data);
       console.log(`Saved direct render to: ${tempImagePath}`);
       

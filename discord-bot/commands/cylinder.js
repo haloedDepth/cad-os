@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const cadService = require('../services/cad-service');
 const path = require('path');
+const filenameUtils = require('../utils/filename-utils');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -46,11 +47,8 @@ module.exports = {
         console.log('Model generation successful. Result:', result);
         
         // Extract the filename from the result
-        const fileName = result.obj_path?.replace(/\.obj$/i, '') || 
-                        result.obj_result?.file?.replace(/\.obj$/i, '') ||
-                        `cylinder_${radius}_${height}`;
-        
-        console.log(`Extracted file name: ${fileName}`);
+        const fileName = result.fileName || filenameUtils.generateModelFilename('cylinder', params);
+        console.log(`Using filename: ${fileName}`);
         
         // Try to render the model and get an image
         let imagePath = null;
@@ -58,7 +56,6 @@ module.exports = {
         
         try {
           console.log('Attempting to render the model...');
-          // This will throw an error until the rendering endpoint is implemented
           imagePath = await cadService.renderModel(fileName, 'cylinder');
           renderingSuccessful = true;
           console.log('Rendering successful. Image path:', imagePath);
