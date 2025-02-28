@@ -6,7 +6,8 @@
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [cad-os.models.registry :as registry]
-            [cad-os.formats :as formats])
+            [cad-os.formats :as formats]
+            [cad-os.render :as render])
   (:gen-class))
 
 (defn handle-model-request
@@ -141,7 +142,79 @@
          :body obj-file}
         {:status 404
          :headers {"Content-Type" "application/json"}
-         :body {:error (str "File not found: " (.getAbsolutePath obj-file))}}))))
+         :body {:error (str "File not found: " (.getAbsolutePath obj-file))}})))
+  (GET "/render/:filename/:view" [filename view :as request]
+    (println "Handling /render/" filename "/" view "request")
+    (let [model-type (get-in request [:params :model_type])
+          size (get-in request [:params :size] 800)
+          white-bg (get-in request [:params :white_background] true)
+  
+          ;; Determine views based on the view parameter
+          view-keyword (keyword view)
+  
+          ;; Create a temporary directory for rendering
+          output-dir (str "render_output/" filename)
+          _ (io/make-parents (str output-dir "/placeholder"))
+  
+          ;; Generate the view
+          render-options {:size size
+                          :white-background white-bg}
+  
+          ;; Call the render function
+          result (case view-keyword
+                   :front (render/generate-orbit-view
+                           filename
+                           [model-type]
+                           0
+                           30
+                           (str output-dir "/" filename "_front.png")
+                           render-options)
+                   :right (render/generate-orbit-view
+                           filename
+                           [model-type]
+                           90
+                           30
+                           (str output-dir "/" filename "_right.png")
+                           render-options)
+                   :back (render/generate-orbit-view
+                          filename
+                          [model-type]
+                          180
+                          30
+                          (str output-dir "/" filename "_back.png")
+                          render-options)
+                   :left (render/generate-orbit-view
+                          filename
+                          [model-type]
+                          270
+                          30
+                          (str output-dir "/" filename "_left.png")
+                          render-options)
+                   :top (render/generate-orbit-view
+                         filename
+                         [model-type]
+                         0
+                         90
+                         (str output-dir "/" filename "_top.png")
+                         render-options)
+                   ;; Default to front view
+                   (render/generate-orbit-view
+                    filename
+                    [model-type]
+                    0
+                    30
+                    (str output-dir "/" filename "_front.png")
+                    render-options))]
+  
+      (if (= (:status result) "success")
+        {:status 200
+         :headers {"Content-Type" "image/png"
+                   "Content-Disposition" (str "attachment; filename=\""
+                                              filename "_" (name view-keyword) ".png\"")}
+         :body (io/file (:file result))}
+        {:status 500
+         :headers {"Content-Type" "application/json"}
+         :body {:error (:message result)}}))))
 
 (def app
   (-> app-routes

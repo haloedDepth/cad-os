@@ -144,3 +144,74 @@ async def get_all_schemas():
         logger.error(f"Request error: {e}")
         # Return empty schemas
         return {"schemas": {}}
+
+async def render_model(filename: str, model_type: str = None, view: str = "front"):
+    """Render a model and return the image"""
+    try:
+        logger.info(f"Requesting render for model: {filename}, type: {model_type}, view: {view}")
+        
+        # Strip off any file extension
+        base_filename = filename.split('.')[0] if '.' in filename else filename
+        
+        # Model type is needed for the rendering process
+        if not model_type:
+            # Try to extract model type from filename (e.g., "washer_10_5_2" -> "washer")
+            parts = base_filename.split('_')
+            if parts:
+                model_type = parts[0]
+        
+        # Create a temporary directory for the output if it doesn't exist
+        output_dir = "render_output"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        # Determine the output image path
+        image_name = f"{base_filename}_{view}.png"
+        image_path = os.path.join(output_dir, image_name)
+        
+        # Build the URL for the Clojure service render endpoint
+        url = f"{CLOJURE_SERVICE_URL}/render/{base_filename}"
+        if view:
+            url += f"/{view}"
+        
+        params = {}
+        if model_type:
+            params["model_type"] = model_type
+            
+        # Add rendering parameters
+        params["size"] = 800  # Image size
+        params["white_background"] = True
+        
+        logger.info(f"Requesting render from URL: {url} with params: {params}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:  # Longer timeout for rendering
+            response = await client.get(url, params=params, follow_redirects=True)
+            
+            if response.status_code == 200:
+                # Save the image temporarily
+                with open(image_path, 'wb') as f:
+                    f.write(response.content)
+                
+                return {
+                    "status": 200,
+                    "content": response.content,
+                    "filename": image_name
+                }
+            else:
+                logger.warning(f"Error from Clojure service: {response.status_code} - {response.text}")
+                return {
+                    "status": response.status_code,
+                    "error": "Failed to render model"
+                }
+    except httpx.RequestError as e:
+        logger.error(f"Request error: {e}")
+        return {
+            "status": 503,
+            "error": f"Error communicating with CAD service: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Unexpected error rendering model: {str(e)}")
+        return {
+            "status": 500,
+            "error": f"Error rendering model: {str(e)}"
+        }

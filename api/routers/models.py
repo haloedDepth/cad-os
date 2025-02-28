@@ -105,3 +105,28 @@ async def get_model_with_format(filename: str, format: str):
         media_type="application/octet-stream",
         headers={"Content-Disposition": f"attachment; filename={filename}.{format_to_ext[format]}"}
     )
+
+@router.get("/render/{filename}")
+async def render_model(filename: str, view: str = "front", model_type: str = None):
+    """Render a model image and return it"""
+    logger.info(f"Request to render model: {filename}, view: {view}, type: {model_type}")
+    
+    try:
+        # Call the clojure service to render the model
+        result = await clojure_service.render_model(filename, model_type, view)
+        
+        if result["status"] != 200:
+            raise HTTPException(
+                status_code=result["status"], 
+                detail=result.get("error", f"Failed to render model: {filename}")
+            )
+        
+        # Return the image
+        return Response(
+            content=result["content"],
+            media_type="image/png",
+            headers={"Content-Disposition": f"attachment; filename={result['filename']}"}
+        )
+    except Exception as e:
+        logger.error(f"Error rendering model {filename}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error rendering model: {str(e)}")
