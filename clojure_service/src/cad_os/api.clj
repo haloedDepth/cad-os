@@ -7,21 +7,26 @@
             [clojure.java.io :as io]
             [cad-os.models.registry :as registry]
             [cad-os.formats :as formats]
-            [cad-os.render :as render])
+            [cad-os.render :as render]
+            [cad-os.utils.logger :as logger]
+            [cad-os.utils.errors :as errors])
   (:gen-class))
 
+;; Initialize logger
+(def log (logger/get-logger))
+
 (defn handle-model-request
-  "Generic handler for model creation requests"
+  "Generic handler for model creation requests with improved error handling"
   [create-fn request]
-  (println "Handling model request with body:" (:body request))
+  ((:info log) "Handling model request" {:body (:body request)})
   (try
     (let [params (:body request)
-          _ (println "Processing params:" params)
+          _ ((:debug log) "Processing params" {:params params})
 
           ;; Extract format request if present (in future API versions)
           requested-formats (get params :formats nil)
           _ (when requested-formats
-              (println "Client requested specific formats:" requested-formats))
+              ((:info log) "Client requested specific formats" {:formats requested-formats}))
 
           ;; For web requests, create both .g and .obj by default for backward compatibility
           formats #{:g :obj}
@@ -34,103 +39,109 @@
           ;; Create model with specified formats
           result (create-fn params :formats formats)]
 
-      (println "Model creation result:" result)
+      ((:info log) "Model creation result" {:status (:status result)})
       (if (= (:status result) "error")
+        ;; Return error response
         {:status 400
          :headers {"Content-Type" "application/json"}
          :body result}
+        ;; Return success response
         {:status 200
          :headers {"Content-Type" "application/json"}
          :body result}))
+    (catch clojure.lang.ExceptionInfo e
+      ;; Handle ex-info exceptions
+      (let [data (ex-data e)]
+        ((:error log) "Error processing request" {:message (.getMessage e) :data data} e)
+        (errors/handle-exception e)))
     (catch Exception e
-      (println "Error processing request:" (.getMessage e))
-      (.printStackTrace e)
+      ;; Handle generic exceptions
+      ((:error log) "Unexpected error processing request" {} e)
       {:status 500
        :headers {"Content-Type" "application/json"}
        :body {:status "error"
               :message (str "Internal server error: " (.getMessage e))}})))
 
 (defn get-model-file
-  "Get a model file in the specified format"
+  "Get a model file in the specified format with improved error handling"
   [filename format]
-  (println "Handling get-model-file request for" filename "in format" format)
+  ((:info log) "Handling get-model-file request" {:filename filename :format format})
   (let [base-name (if (.endsWith filename ".obj")
                     (clojure.string/replace filename #"\.obj$" "")
                     filename)
         format-keyword (keyword format)
         result (formats/ensure-format base-name format-keyword)]
 
-    (println "Format conversion result:" result)
+    ((:debug log) "Format conversion result" {:result result})
 
     (if (= (:status result) "success")
       (let [file (io/file (:file result))]
-        (println "Serving file:" (.getAbsolutePath file))
+        ((:info log) "Serving file" {:file (.getAbsolutePath file)})
         (if (.exists file)
           {:status 200
            :headers {"Content-Type" "application/octet-stream"
                      "Content-Disposition" (str "attachment; filename=\""
                                                 (.getName file) "\"")}
            :body file}
-          {:status 404
-           :headers {"Content-Type" "application/json"}
-           :body {:error (str "File not found: " (.getAbsolutePath file))}}))
-      {:status 500
-       :headers {"Content-Type" "application/json"}
-       :body {:error (:message result)}})))
+          (errors/not-found-error (str "File not found: " (.getAbsolutePath file))
+                                  {:filename filename
+                                   :format format})))
+      (errors/server-error (:message result)
+                           {:filename filename
+                            :format format}))))
 
 (defroutes app-routes
-  (GET "/" [] "CAD-OS API is running")
+  (GET "/" []
+    (do
+      ((:info log) "Root endpoint accessed")
+      "CAD-OS API is running"))
 
   ;; Get list of available model types
   (GET "/models/types" []
-    (println "Getting model types")
+    ((:info log) "Getting model types")
     (let [types (registry/get-model-types)]
-      (println "Available types:" types)
+      ((:info log) "Available types" {:types types})
       {:status 200
        :headers {"Content-Type" "application/json"}
        :body {:model_types types}}))
 
   ;; Get all schemas
   (GET "/models/schemas" []
-    (println "Getting all model schemas")
+    ((:info log) "Getting all model schemas")
     (let [schemas (registry/get-all-schemas)]
-      (println "Returning schemas for" (count schemas) "models")
+      ((:info log) "Returning schemas" {:count (count schemas)})
       {:status 200
        :headers {"Content-Type" "application/json"}
        :body {:schemas schemas}}))
 
   ;; Get schema for a specific model type
   (GET "/models/schema/:type" [type]
-    (println "Getting schema for type:" type)
+    ((:info log) "Getting schema for type" {:type type})
     (if-let [schema (registry/get-model-schema type)]
       {:status 200
        :headers {"Content-Type" "application/json"}
        :body schema}
-      {:status 404
-       :headers {"Content-Type" "application/json"}
-       :body {:status "error"
-              :message (str "Unknown model type: " type)}}))
+      (errors/not-found-error (str "Unknown model type: " type)
+                              {:type type})))
 
   ;; Generate a model of specified type
   (POST "/generate/:type" [type :as req]
-    (println "Generating model of type:" type)
+    ((:info log) "Generating model of type" {:type type})
     (handle-model-request (partial registry/create-model type) req))
 
   ;; Get model in specific format
   (GET "/models/:filename/:format" [filename format]
-    (println "Handling /models/" filename "/" format "request")
-    (println "Full requested filename:" filename)
-    (let [result (get-model-file filename format)]
-      (println "Response status:" (:status result))
-      result))
+    ((:info log) "Handling model request" {:filename filename :format format})
+    ((:debug log) "Full requested filename" {:filename filename})
+    (get-model-file filename format))
 
   ;; Original model endpoint
   (GET "/models/:filename" [filename]
-    (println "Handling /models/" filename "request")
+    ((:info log) "Handling model request with default format" {:filename filename})
     (let [obj-file (io/file (if (.endsWith filename ".obj")
                               filename
                               (str filename ".obj")))]
-      (println "Looking for file:" (.getAbsolutePath obj-file))
+      ((:debug log) "Looking for file" {:path (.getAbsolutePath obj-file)})
       (if (.exists obj-file)
         {:status 200
          :headers {"Content-Type" "application/octet-stream"
@@ -140,13 +151,12 @@
                                                 (str filename ".obj"))
                                               "\"")}
          :body obj-file}
-        {:status 404
-         :headers {"Content-Type" "application/json"}
-         :body {:error (str "File not found: " (.getAbsolutePath obj-file))}})))
+        (errors/not-found-error (str "File not found: " (.getAbsolutePath obj-file))
+                                {:filename filename}))))
 
-  ;; NEW ROUTE: Add endpoint for rendering with default view (front)
+  ;; Endpoint for rendering with default view (front)
   (GET "/render/:filename" [filename :as request]
-    (println "Handling /render/" filename " request with default view")
+    ((:info log) "Handling render request with default view" {:filename filename})
     (let [model-type (get-in request [:params :model_type])
           size (get-in request [:params :size] 800)
           white-bg (get-in request [:params :white_background] true)
@@ -174,12 +184,13 @@
                    "Content-Disposition" (str "attachment; filename=\""
                                               filename "_front.png\"")}
          :body (io/file (:file result))}
-        {:status 500
-         :headers {"Content-Type" "application/json"}
-         :body {:error (:message result)}})))
+        (errors/server-error (:message result)
+                             {:filename filename
+                              :view "front"
+                              :model_type model-type}))))
 
   (GET "/render/:filename/:view" [filename view :as request]
-    (println "Handling /render/" filename "/" view "request")
+    ((:info log) "Handling render request" {:filename filename :view view})
     (let [model-type (get-in request [:params :model_type])
           size (get-in request [:params :size] 800)
           white-bg (get-in request [:params :white_background] true)
@@ -199,35 +210,35 @@
           result (case view-keyword
                    :front (render/generate-orbit-view
                            filename
-                           (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
+                           (if model-type [model-type] [])
                            0
                            30
                            (str output-dir "/" filename "_front.png")
                            render-options)
                    :right (render/generate-orbit-view
                            filename
-                           (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
+                           (if model-type [model-type] [])
                            90
                            30
                            (str output-dir "/" filename "_right.png")
                            render-options)
                    :back (render/generate-orbit-view
                           filename
-                          (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
+                          (if model-type [model-type] [])
                           180
                           30
                           (str output-dir "/" filename "_back.png")
                           render-options)
                    :left (render/generate-orbit-view
                           filename
-                          (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
+                          (if model-type [model-type] [])
                           270
                           30
                           (str output-dir "/" filename "_left.png")
                           render-options)
                    :top (render/generate-orbit-view
                          filename
-                         (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
+                         (if model-type [model-type] [])
                          0
                          90
                          (str output-dir "/" filename "_top.png")
@@ -235,7 +246,7 @@
                    ;; Default to front view
                    (render/generate-orbit-view
                     filename
-                    (if model-type [model-type] [])  ;; FIXED: Handle nil model-type
+                    (if model-type [model-type] [])
                     0
                     30
                     (str output-dir "/" filename "_front.png")
@@ -247,26 +258,31 @@
                    "Content-Disposition" (str "attachment; filename=\""
                                               filename "_" (name view-keyword) ".png\"")}
          :body (io/file (:file result))}
-        {:status 500
-         :headers {"Content-Type" "application/json"}
-         :body {:error (:message result)}}))))
+        (errors/server-error (:message result)
+                             {:filename filename
+                              :view view
+                              :model_type model-type})))))
 
 (def app
   (-> app-routes
       (wrap-json-body {:keywords? true})
-      wrap-json-response))
+      wrap-json-response
+      errors/wrap-exception-handling))
 
 (defn -main [& args]
+  ;; Set log level
+  (logger/set-min-log-level! :info)
+
   ;; Clear the registry before starting to avoid duplicates
-  (println "Clearing model registry...")
+  ((:info log) "Clearing model registry")
   (reset! registry/model-registry {})
 
   ;; These requires will trigger the registration
-  (println "Loading model namespaces...")
+  ((:info log) "Loading model namespaces")
   (require 'cad-os.models.washer)
   (require 'cad-os.models.cylinder)
 
-  (println "Starting CAD-OS API server on port 3000...")
-  (println "Available model types:" (registry/get-model-types))
+  ((:info log) "Starting CAD-OS API server on port 3000")
+  ((:info log) "Available model types" {:types (registry/get-model-types)})
   (run-jetty app {:port 3000 :join? false})
-  (println "Server started!")) 
+  ((:info log) "Server started!"))

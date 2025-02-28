@@ -1,5 +1,9 @@
 (ns cad-os.commands
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [cad-os.utils.logger :as logger]))
+
+;; Initialize logger
+(def log (logger/get-logger))
 
 ;; Helper functions
 (defn vec->str
@@ -22,6 +26,7 @@
   "Validate that v is a 3D point vector"
   [v]
   (when-not (and (vector? v) (= (count v) 3) (every? number? v))
+    ((:error log) "Invalid point vector" {:point v})
     (throw (Exception. (str "Expected a vector of 3 numbers [x y z], got: " v)))))
 
 (defn validate-points
@@ -35,6 +40,7 @@
   "Create ellipsoid using center and three vectors"
   [name center front right up]
   (validate-points [center front right up])
+  ((:debug log) "Inserting ellipsoid" {:name name})
   (str "in " name " ell "
        (point->str center) " "
        (point->str front) " "
@@ -45,12 +51,14 @@
   "Create sphere using center point and radius"
   [name center radius]
   (validate-point center)
+  ((:debug log) "Inserting sphere" {:name name :radius radius})
   (str "in " name " sph " (point->str center) " " radius))
 
 (defn insert-ellipsoid-g
   "Create ellipsoid using two foci and axis length"
   [name focus1 focus2 axis-length]
   (validate-points [focus1 focus2])
+  ((:debug log) "Inserting ellipsoid-g" {:name name})
   (str "in " name " ellg "
        (point->str focus1) " "
        (point->str focus2) " "
@@ -60,6 +68,7 @@
   "Create ellipsoid using vertex, vector, and revolution radius"
   [name vertex vector-a radius-revolution]
   (validate-points [vertex vector-a])
+  ((:debug log) "Inserting ellipsoid-1" {:name name})
   (str "in " name " ell1 "
        (point->str vertex) " "
        (point->str vector-a) " "
@@ -69,6 +78,7 @@
   "Create elliptical hyperboloid"
   [name vertex vector-h vector-a magnitude-b apex-distance]
   (validate-points [vertex vector-h vector-a])
+  ((:debug log) "Inserting elliptical hyperboloid" {:name name})
   (str "in " name " ehy "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -79,6 +89,7 @@
   "Create elliptical paraboloid"
   [name vertex vector-h vector-a magnitude-b]
   (validate-points [vertex vector-h vector-a])
+  ((:debug log) "Inserting elliptical paraboloid" {:name name})
   (str "in " name " epa "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -90,6 +101,7 @@
   "Create truncated general cone"
   [name vertex vector-h vector-a vector-b magnitude-c magnitude-d]
   (validate-points [vertex vector-h vector-a vector-b])
+  ((:debug log) "Inserting truncated general cone" {:name name})
   (str "in " name " tgc "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -98,15 +110,14 @@
        magnitude-c " " magnitude-d))
 
 (defn insert-right-circular-cylinder
-  "Create right circular cylinder.
-   
-   Parameters:
-   - name: The name of the cylinder
-   - position: A vector [x y z] representing the base center point
-   - vector-h: A vector [x y z] representing the height vector
-   - radius: The radius of the cylinder"
+  "Create right circular cylinder."
   [name position vector-h radius]
   (validate-points [position vector-h])
+  ((:debug log) "Inserting right circular cylinder"
+                {:name name
+                 :position position
+                 :height vector-h
+                 :radius radius})
   (str "in " name " rcc "
        (point->str position) " "
        (point->str vector-h) " "
@@ -116,6 +127,7 @@
   "Create right elliptical cylinder"
   [name position vector-h radius]
   (validate-points [position vector-h])
+  ((:debug log) "Inserting right elliptical cylinder" {:name name})
   (str "in " name " rec "
        (point->str position) " "
        (point->str vector-h) " "
@@ -125,6 +137,7 @@
   "Create right hyperbolic cylinder"
   [name vertex vector-h vector-b rectangular-half-width apex-distance]
   (validate-points [vertex vector-h vector-b])
+  ((:debug log) "Inserting right hyperbolic cylinder" {:name name})
   (str "in " name " rhc "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -135,6 +148,7 @@
   "Create right parabolic cylinder"
   [name vertex vector-h vector-b rectangular-half-width]
   (validate-points [vertex vector-h vector-b])
+  ((:debug log) "Inserting right parabolic cylinder" {:name name})
   (str "in " name " rpc "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -145,6 +159,7 @@
   "Create truncated elliptical cone"
   [name vertex vector-h vector-a vector-b]
   (validate-points [vertex vector-h vector-a vector-b])
+  ((:debug log) "Inserting truncated elliptical cone" {:name name})
   (str "in " name " tec "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -155,6 +170,7 @@
   "Create truncated right circular cone"
   [name vertex vector-h radius-base radius-top]
   (validate-points [vertex vector-h])
+  ((:debug log) "Inserting truncated right circular cone" {:name name})
   (str "in " name " trc "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -165,6 +181,7 @@
   "Create torus"
   [name center normal radius-revolution radius-tube]
   (validate-points [center normal])
+  ((:debug log) "Inserting torus" {:name name})
   (str "in " name " tor "
        (point->str center) " "
        (point->str normal) " "
@@ -174,6 +191,7 @@
   "Create elliptical torus"
   [name center normal radius-revolution vector-c magnitude-semi-minor-axis]
   (validate-points [center normal vector-c])
+  ((:debug log) "Inserting elliptical torus" {:name name})
   (str "in " name " eto "
        (point->str center) " "
        (point->str normal) " "
@@ -185,6 +203,7 @@
   "Create conical particle"
   [name vertex vector-h radius-v radius-h]
   (validate-points [vertex vector-h])
+  ((:debug log) "Inserting conical particle" {:name name})
   (str "in " name " part "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -217,21 +236,32 @@
   (let [validation (validate-arc-params arc-params)]
     (if (:valid validation)
       (str "{carc S " start " E " end " R " radius " L " left-right " O " orientation "}")
-      (throw (Exception. (str "Invalid arc parameters: " (str/join ", " (:errors validation))))))))
+      (do
+        ((:error log) "Invalid arc parameters"
+                      {:errors (:errors validation)
+                       :params arc-params})
+        (throw (Exception. (str "Invalid arc parameters: "
+                                (str/join ", " (:errors validation)))))))))
 
 (defn format-bezier-segment [[degree & points]]
   (if (and (number? degree)
            (>= degree 1)
            (<= degree (count points)))
     (str "{bezier D " degree " P {" (str/join " " points) "}}")
-    (throw (Exception. "Invalid bezier parameters: degree must be between 1 and point count"))))
+    (do
+      ((:error log) "Invalid bezier parameters"
+                    {:degree degree
+                     :point-count (count points)})
+      (throw (Exception. "Invalid bezier parameters: degree must be between 1 and point count")))))
 
 (defn format-segment [segment]
   (case (first segment)
     :line (format-line-segment (rest segment))
     :arc (format-arc-segment (rest segment))
     :bezier (format-bezier-segment (rest segment))
-    (throw (Exception. (str "Unknown segment type: " (first segment))))))
+    (do
+      ((:error log) "Unknown segment type" {:type (first segment)})
+      (throw (Exception. (str "Unknown segment type: " (first segment)))))))
 
 (defn validate-segments [vertex-list segments]
   (let [vertex-count (count vertex-list)
@@ -282,6 +312,7 @@
   "Create a sketch"
   [sketch-name v-point a-point b-point vertex-list segments]
   (validate-points [v-point a-point b-point])
+  ((:debug log) "Inserting sketch" {:name sketch-name :vertex-count (count vertex-list)})
   (let [validation-result (validate-segments vertex-list segments)]
     (if (:valid validation-result)
       (str "put " sketch-name " sketch "
@@ -290,15 +321,19 @@
            "B {" (point->str b-point) "} "
            "VL { " (str/join " " (map #(str "{" (first %) " " (second %) "}") vertex-list)) " } "
            "SL { " (str/join " " (map format-segment segments)) " }")
-      (str "Sketch validation failed: "
-           (str/join ", "
-                     (map #(str (:error %) " in " (:segment %))
-                          (:invalid-segments validation-result)))))))
+      (do
+        ((:error log) "Sketch validation failed"
+                      {:errors (:invalid-segments validation-result)})
+        (str "Sketch validation failed: "
+             (str/join ", "
+                       (map #(str (:error %) " in " (:segment %))
+                            (:invalid-segments validation-result))))))))
 
 (defn insert-sketch-revolve
   "Create a sketch revolve"
   [name vertex axis start angle sketch-name]
   (validate-points [vertex axis start])
+  ((:debug log) "Inserting sketch revolve" {:name name :sketch sketch-name})
   (str "in " name " revolve "
        (point->str vertex) " "
        (point->str axis) " "
@@ -309,6 +344,7 @@
   "Create a sketch extrude"
   [name vertex vector-h vector-a vector-b sketch-name]
   (validate-points [vertex vector-h vector-a vector-b])
+  ((:debug log) "Inserting sketch extrude" {:name name :sketch sketch-name})
   (str "in " name " extrude "
        (point->str vertex) " "
        (point->str vector-h) " "
@@ -318,21 +354,28 @@
 
 ;; Boolean operations
 (defn union [name shape1 shape2]
+  ((:debug log) "Creating union" {:name name :shapes [shape1 shape2]})
   (str "r " name " u " shape1 " u " shape2))
 
 (defn subtraction [name shape1 shape2]
+  ((:debug log) "Creating subtraction" {:name name :shapes [shape1 shape2]})
   (str "r " name " u " shape1 " - " shape2))
 
 (defn intersection [name shape1 shape2]
+  ((:debug log) "Creating intersection" {:name name :shapes [shape1 shape2]})
   (str "r " name " u " shape1 " + " shape2))
 
 ;; Other operations
 (defn copy-object [from-object to-object]
+  ((:debug log) "Copying object" {:from from-object :to to-object})
   (str "cp " from-object " " to-object))
 
 ;; Arbitrary polyhedra
 (defn validate-vertices [vertices expected-count]
   (when-not (= (count vertices) expected-count)
+    ((:error log) "Invalid vertex count"
+                  {:expected expected-count
+                   :actual (count vertices)})
     (throw (Exception. (str "Expected " expected-count " vertices, got " (count vertices)))))
   (validate-points vertices))
 
@@ -344,28 +387,33 @@
    Each vertex should be a vector of 3 coordinates [x y z]"
   [name vertices]
   (validate-vertices vertices 4)
+  ((:debug log) "Inserting ARB4" {:name name})
   (str "in " name " arb4 " (vertices->string vertices)))
 
 (defn insert-arb5
   "Create an ARB5 primitive with 5 vertices"
   [name vertices]
   (validate-vertices vertices 5)
+  ((:debug log) "Inserting ARB5" {:name name})
   (str "in " name " arb5 " (vertices->string vertices)))
 
 (defn insert-arb6
   "Create an ARB6 primitive with 6 vertices"
   [name vertices]
   (validate-vertices vertices 6)
+  ((:debug log) "Inserting ARB6" {:name name})
   (str "in " name " arb6 " (vertices->string vertices)))
 
 (defn insert-arb7
   "Create an ARB7 primitive with 7 vertices"
   [name vertices]
   (validate-vertices vertices 7)
+  ((:debug log) "Inserting ARB7" {:name name})
   (str "in " name " arb7 " (vertices->string vertices)))
 
 (defn insert-arb8
   "Create an ARB8 primitive with 8 vertices"
   [name vertices]
   (validate-vertices vertices 8)
+  ((:debug log) "Inserting ARB8" {:name name})
   (str "in " name " arb8 " (vertices->string vertices)))

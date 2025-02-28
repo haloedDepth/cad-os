@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
 const cadService = require('../services/cad-service');
-const path = require('path');
-const filenameUtils = require('../utils/filename-utils');
+const logger = require('../utils/logger')('cylinder-command');
+const { handleCommandError } = require('../utils/errorHandler');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -20,52 +20,41 @@ module.exports = {
   
   async execute(interaction) {
     try {
-      console.log('Cylinder command execution started');
+      logger.info('Cylinder command execution started', {
+        userId: interaction.user.id,
+        guildId: interaction.guildId
+      });
       
       // Immediately defer the reply to prevent timeout
       await interaction.deferReply();
-      console.log('Reply deferred');
+      logger.debug('Reply deferred');
       
       const radius = interaction.options.getNumber('radius');
       const height = interaction.options.getNumber('height');
       
-      console.log(`Received parameters: radius=${radius}, height=${height}`);
+      logger.info('Cylinder parameters received', { radius, height });
       
       // Create parameters object
-      const params = {
-        radius: radius,
-        height: height
-      };
+      const params = { radius, height };
       
       await interaction.editReply(`Generating cylinder model with:\nRadius: ${radius}\nHeight: ${height}`);
-      console.log('Updated reply with parameter information');
       
       try {
-        console.log('Calling CAD service to generate model...');
         // Generate the model
         const result = await cadService.generateModel('cylinder', params);
-        console.log('Model generation successful. Result:', result);
+        logger.info('Model generation successful', { result });
         
-        // Extract the filename from the result
-        const fileName = result.fileName || filenameUtils.generateModelFilename('cylinder', params);
-        console.log(`Using filename: ${fileName}`);
+        // Get the filename
+        const fileName = result.fileName;
         
         // Try to render the model and get an image
         let imagePath = null;
-        let renderingSuccessful = false;
-        
         try {
-          console.log('Attempting to render the model...');
+          logger.info('Attempting to render the model', { fileName });
           imagePath = await cadService.renderModel(fileName, 'cylinder');
-          renderingSuccessful = true;
-          console.log('Rendering successful. Image path:', imagePath);
-        } catch (renderError) {
-          console.log('Rendering not implemented yet:', renderError.message);
-        }
-        
-        if (renderingSuccessful && imagePath) {
-          console.log('Preparing to send the rendered image...');
-          // Send the image if rendering was successful
+          logger.info('Rendering successful', { imagePath });
+          
+          // Send the rendered image
           const attachment = new AttachmentBuilder(imagePath, { name: 'cylinder_render.png' });
           
           await interaction.editReply({
@@ -73,68 +62,28 @@ module.exports = {
                     `Parameters: Radius: ${radius}, Height: ${height}`,
             files: [attachment]
           });
-          console.log('Sent message with rendered image');
-        } else {
-          console.log('Rendering not available, sending text-only response');
-          // Just send the model info if rendering wasn't successful
+          
+          logger.info('Sent message with rendered image');
+        } catch (renderError) {
+          logger.warn('Rendering failed, sending text-only response', { 
+            error: renderError.message 
+          });
+          
+          // Just send model info if rendering failed
           await interaction.editReply({
             content: `Cylinder model generated successfully!\n` +
                     `Parameters: Radius: ${radius}, Height: ${height}\n` +
                     `Model file: ${fileName}\n\n` +
-                    `(Rendering not available yet - implement the rendering endpoint in the API to see images)`
+                    `(Failed to render model image: ${renderError.message})`
           });
-          console.log('Sent text-only response');
         }
       } catch (error) {
-        console.error('Error in model generation:', error);
-        console.error('Stack trace:', error.stack);
-        // Craft a more helpful error message
-        let errorMessage = `Error: ${error.message}\n\nTroubleshooting:\n`;
-        
-        if (error.message.includes('ECONNREFUSED') && error.message.includes('::1')) {
-          errorMessage += "• IPv6 connection issue detected. The server is configured to use IPv6 (::1) but can't connect.\n";
-          errorMessage += "• Try updating your .env file to set API_BASE_URL=http://127.0.0.1:8000/api to force IPv4.\n";
-        } else if (error.message.includes('ECONNREFUSED') && error.message.includes('127.0.0.1')) {
-          errorMessage += "• Make sure the FastAPI server is running on port 8000.\n";
-          errorMessage += "• Check that there are no firewall rules blocking the connection.\n";
-        }
-        
-        errorMessage += "• Verify that both API and Clojure services are running.";
-        
-        await interaction.editReply(errorMessage);
-        console.log('Sent error message to user');
+        throw error;
       }
     } catch (error) {
-      console.error('Error handling cylinder command:', error);
-      console.error('Stack trace:', error.stack);
-      
-      // Only try to respond if the interaction is still valid
-      if (error.code !== 10062) {
-        try {
-          if (interaction.deferred) {
-            // Craft a more helpful error message
-            let errorMessage = `Error: ${error.message}\n\nTroubleshooting:\n`;
-            
-            if (error.message.includes('ECONNREFUSED') && error.message.includes('::1')) {
-              errorMessage += "• IPv6 connection issue detected. The server is configured to use IPv6 (::1) but can't connect.\n";
-              errorMessage += "• Try updating your .env file to set API_BASE_URL=http://127.0.0.1:8000/api to force IPv4.\n";
-            } else if (error.message.includes('ECONNREFUSED') && error.message.includes('127.0.0.1')) {
-              errorMessage += "• Make sure the FastAPI server is running on port 8000.\n";
-              errorMessage += "• Check that there are no firewall rules blocking the connection.\n";
-            }
-            
-            errorMessage += "• Verify that both API and Clojure services are running.";
-            
-            await interaction.editReply(errorMessage);
-            console.log('Sent error message to user after defer');
-          } else if (!interaction.replied) {
-            await interaction.reply(`Error: ${error.message}\n\nMake sure the FastAPI server is running on port 8000.`);
-            console.log('Sent error message to user directly');
-          }
-        } catch (replyError) {
-          console.error('Error sending error response:', replyError);
-        }
-      }
+      await handleCommandError(error, interaction, 'cylinder', {
+        params: { radius: interaction.options.getNumber('radius'), height: interaction.options.getNumber('height') }
+      });
     }
   },
 };

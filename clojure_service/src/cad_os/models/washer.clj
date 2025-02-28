@@ -1,6 +1,10 @@
 (ns cad-os.models.washer
   (:require [cad-os.commands :as commands]
-            [cad-os.models.registry :as registry]))
+            [cad-os.models.registry :as registry]
+            [cad-os.utils.logger :as logger]))
+
+;; Initialize logger
+(def log (logger/get-logger))
 
 ;; Schema definition for washer
 (def washer-schema
@@ -58,9 +62,11 @@
         position-y (get params :position-y 0)
         position-z (get params :position-z 0)]
 
-    (println "Generating washer commands with: outer="
-             outer-diameter "inner=" inner-diameter "thickness=" thickness
-             "position=(" position-x "," position-y "," position-z ")")
+    ((:info log) "Generating washer commands"
+                 {:outer outer-diameter
+                  :inner inner-diameter
+                  :thickness thickness
+                  :position [position-x position-y position-z]})
 
     [(commands/insert-right-circular-cylinder
       "outer" [position-x position-y position-z] [0 0 thickness] (/ outer-diameter 2))

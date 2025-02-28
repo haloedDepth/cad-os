@@ -1,6 +1,10 @@
 (ns cad-os.models.cylinder
   (:require [cad-os.commands :as commands]
-            [cad-os.models.registry :as registry]))
+            [cad-os.models.registry :as registry]
+            [cad-os.utils.logger :as logger]))
+
+;; Initialize logger
+(def log (logger/get-logger))
 
 ;; Schema definition for cylinder
 (def cylinder-schema
@@ -49,8 +53,10 @@
         position-y (get params :position-y 0)
         position-z (get params :position-z 0)]
 
-    (println "Generating cylinder commands with: radius=" radius "height=" height
-             "position=(" position-x "," position-y "," position-z ")")
+    ((:info log) "Generating cylinder commands"
+                 {:radius radius
+                  :height height
+                  :position [position-x position-y position-z]})
 
     [(commands/insert-right-circular-cylinder
       "cylinder"

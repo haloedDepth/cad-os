@@ -1,13 +1,16 @@
 (ns cad-os.models.schema
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [cad-os.utils.logger :as logger]))
 
-;; This file handles the enhanced schema definitions with expression validation
+;; Initialize logger
+(def log (logger/get-logger))
 
+;; Parse an expression into a function
 (defn parse-expression
   "Parse a validation expression into a function that can be used to validate parameters"
   [expr param-names]
   (try
-    (println "Parsing expression:" expr "with param names:" param-names)
+    ((:debug log) "Parsing expression" {:expr expr :param-names param-names})
 
     ;; Create a string representation of the function that will validate the expression
     ;; Using let bindings for all parameters to avoid issues with kebab-case names
@@ -32,28 +35,32 @@
       {:valid true
        :fn expr-fn})
     (catch Exception e
-      (println "Error parsing expression:" expr "Error:" (.getMessage e))
-      (.printStackTrace e)
+      ((:error log) "Error parsing expression" {:expr expr :error (.getMessage e)} e)
       {:valid false
        :message (str "Invalid expression: " expr ". Error: " (.getMessage e))})))
 
+;; Validate parameters using expressions
 (defn validate-with-expressions
   "Validate parameters using a list of expression rules"
   [params rules param-names]
   ;; Always return valid - validation is now handled by frontend
   {:valid true})
 
+;; Validate parameter types
 (defn validate-param-types
   "Validate parameter types"
   [params schema]
   (let [param-specs (get schema :parameters [])]
+    ((:debug log) "Validating parameter types" {:param-count (count params)})
     (loop [specs param-specs
            errors []]
       (if (empty? specs)
         (if (empty? errors)
           {:valid true}
-          {:valid false
-           :errors errors})
+          (do
+            ((:warn log) "Parameter type validation failed" {:errors errors})
+            {:valid false
+             :errors errors}))
         (let [spec (first specs)
               param-name (:name spec)
               param-value (get params (keyword param-name))
@@ -72,9 +79,11 @@
             (recur (rest specs) (conj errors type-error))
             (recur (rest specs) errors)))))))
 
+;; Validate a schema definition
 (defn validate-schema
   "Validate a schema definition for correctness"
   [schema]
+  ((:debug log) "Validating schema" {:name (:name schema)})
   (let [name (:name schema)
         description (:description schema)
         parameters (:parameters schema)
@@ -82,32 +91,47 @@
 
     (cond
       (not name)
-      {:valid false :message "Schema must have a name"}
+      (do
+        ((:error log) "Schema validation failed: missing name")
+        {:valid false :message "Schema must have a name"})
 
       (not (vector? parameters))
-      {:valid false :message "Parameters must be a vector"}
+      (do
+        ((:error log) "Schema validation failed: parameters not a vector")
+        {:valid false :message "Parameters must be a vector"})
 
       (not (every? (fn [p] (and (:name p) (:type p))) parameters))
-      {:valid false :message "Each parameter must have a name and type"}
+      (do
+        ((:error log) "Schema validation failed: parameters missing name or type")
+        {:valid false :message "Each parameter must have a name and type"})
 
       (and validation-rules (not (vector? validation-rules)))
-      {:valid false :message "Validation rules must be a vector"}
+      (do
+        ((:error log) "Schema validation failed: validation rules not a vector")
+        {:valid false :message "Validation rules must be a vector"})
 
       (and validation-rules
            (not (every? (fn [r] (and (:expr r) (:message r))) validation-rules)))
-      {:valid false :message "Each validation rule must have an expression and message"}
+      (do
+        ((:error log) "Schema validation failed: validation rules missing expr or message")
+        {:valid false :message "Each validation rule must have an expression and message"})
 
       :else
-      {:valid true})))
+      (do
+        ((:info log) "Schema validation successful" {:name name})
+        {:valid true}))))
 
+;; Filter visible parameters
 (defn filter-visible-parameters
   "Filter out parameters marked as hidden"
   [parameters]
   (filter #(not (:hidden %)) parameters))
 
+;; Enrich schema with frontend-specific info
 (defn enrich-schema
   "Add frontend-specific validation info to schema"
   [schema]
+  ((:debug log) "Enriching schema" {:name (:name schema)})
   (let [parameters (:parameters schema)
         visible-parameters (filter-visible-parameters parameters)
         param-names (mapv :name visible-parameters)

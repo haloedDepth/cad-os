@@ -2,44 +2,36 @@
   (:require [clojure.java.shell :refer [sh]]
             [clojure.java.io :as io]
             [cad-os.filename :as filename]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [cad-os.utils.logger :as logger]))
+
+;; Initialize logger
+(def log (logger/get-logger))
 
 (defn wait-for-command-completion
   "Wait for an external command to complete by checking for the existence of a file"
   [file-path max-attempts delay-ms]
+  ((:debug log) "Waiting for file" {:path file-path :max-attempts max-attempts})
   (loop [attempts 0]
     (if (.exists (io/file file-path))
-      true
+      (do
+        ((:debug log) "File exists" {:path file-path :attempts attempts})
+        true)
       (if (>= attempts max-attempts)
-        false
+        (do
+          ((:warn log) "Timeout waiting for file" {:path file-path :attempts attempts})
+          false)
         (do
           (Thread/sleep delay-ms)
           (recur (inc attempts)))))))
 
 (defn convert-g-to-obj
-  "Convert a .g file to .obj format using the g-obj command-line tool.
-   
-   Parameters:
-   - file-path: Path to the .g file without extension
-   - objects: Collection of object names within the .g file to convert
-   - options: Map of options including:
-     - :verbose (boolean) - Enable verbose mode (-v)
-     - :mesh (boolean) - Generate mesh objects (-m)
-     - :invert (boolean) - Invert normals (-i)
-     - :units (boolean) - Write units info (-u)
-     - :no-colors (boolean) - Don't convert colors (-X followed by lvl)
-     - :colors (boolean) - Convert colors (-x followed by lvl)
-     - :abs-tess-tol (float) - Absolute tessellation tolerance (-a)
-     - :rel-tess-tol (float) - Relative tessellation tolerance (-r)
-     - :norm-tess-tol (float) - Normal tessellation tolerance (-n)
-     - :parallelism (int) - Number of CPUs to use (-P)
-     - :error-file (string) - Error file name (-e)
-     - :dist-calc-tol (float) - Distance calculation tolerance (-D)
-     - :output-file (string) - Output file name (-o)"
+  "Convert a .g file to .obj format using the g-obj command-line tool."
   ([file-path objects]
    (convert-g-to-obj file-path objects {}))
 
   ([file-path objects options]
+   ((:info log) "Converting G to OBJ" {:file file-path :objects objects})
    (let [base-path (filename/base-filename file-path)
          g-file (filename/with-extension base-path :g)
          output-file (or (:output-file options) (filename/with-extension base-path :obj))
@@ -63,25 +55,31 @@
                     true                    (concat objects))
 
          ; Execute command
-         _ (println "Executing:" (str/join " " (cons "g-obj" cmd-args)))
+         _ ((:debug log) "Executing command" {:command "g-obj" :args cmd-args})
          result (apply sh "g-obj" cmd-args)]
 
      ; Wait for output file to exist
      (if (zero? (:exit result))
        (do
-         (println "Command completed successfully, waiting for OBJ file to be generated:" output-file)
+         ((:debug log) "Command completed successfully" {:output-file output-file})
          (if (wait-for-command-completion output-file 30 200)
            (do
-             (println "OBJ file confirmed to exist:" output-file)
+             ((:info log) "OBJ file created successfully" {:file output-file})
              {:status "success"
               :message (str "Created OBJ file: " output-file)
               :output (:out result)
               :file output-file})
-           {:status "error"
-            :message (str "OBJ file was not created despite successful command execution: " output-file)
-            :output (:out result)
-            :error "File not found after timeout"}))
-       {:status "error"
-        :message (str "Failed to convert file: " g-file)
-        :error (:err result)
-        :exit-code (:exit result)}))))
+           (do
+             ((:error log) "OBJ file was not created despite successful command"
+                           {:output-file output-file :command-output (:out result)})
+             {:status "error"
+              :message (str "OBJ file was not created despite successful command execution: " output-file)
+              :output (:out result)
+              :error "File not found after timeout"})))
+       (do
+         ((:error log) "Failed to convert file"
+                       {:input-file g-file :exit-code (:exit result) :error (:err result)})
+         {:status "error"
+          :message (str "Failed to convert file: " g-file)
+          :error (:err result)
+          :exit-code (:exit result)})))))

@@ -1,4 +1,6 @@
 // Client-side validator for model parameters
+import * as logger from './logger.js';
+import { handleError, ERROR_CATEGORY } from './errorHandler.js';
 
 /**
  * Evaluates a validation expression against parameter values
@@ -9,7 +11,7 @@
  */
 export function evaluateExpression(expr, params) {
   try {
-    console.log(`Evaluating expression: "${expr}" with params:`, params);
+    logger.debug(`Evaluating expression: "${expr}"`, { params });
     
     // We'll use direct property access instead of JavaScript identifiers
     // First, parse the expression to identify parameter names
@@ -42,15 +44,19 @@ export function evaluateExpression(expr, params) {
       }
     });
     
-    console.log(`Transformed expression: "${jsExpr}"`);
+    logger.debug(`Transformed expression: "${jsExpr}"`);
     
     // Now evaluate the transformed expression
     const result = eval(jsExpr);
-    console.log(`Expression "${expr}" evaluated to: ${result}`);
+    logger.debug(`Expression "${expr}" evaluated to: ${result}`);
     
     return !!result; // Ensure boolean result
   } catch (error) {
-    console.error(`Error evaluating expression "${expr}":`, error);
+    handleError(error, ERROR_CATEGORY.VALIDATION, {
+      component: "evaluateExpression",
+      action: "evaluating expression",
+      expression: expr
+    });
     return false;
   }
 }
@@ -63,61 +69,77 @@ export function evaluateExpression(expr, params) {
  * @returns {Object} - { valid: boolean, errors: string[] }
  */
 export function validateParameters(params, schema) {
-  // Ensure we have valid inputs
-  if (!schema || !schema.parameters) {
-    console.error("Invalid schema provided to validateParameters:", schema);
-    return { valid: false, errors: ["Invalid schema"] };
-  }
-  
-  // Ensure numbers are parsed
-  const processedParams = {};
-  
-  schema.parameters.forEach(param => {
-    const name = param.name;
-    const value = params[name];
-    
-    if (param.type === 'number' && typeof value === 'string') {
-      processedParams[name] = parseFloat(value);
-    } else {
-      processedParams[name] = value;
+  try {
+    // Ensure we have valid inputs
+    if (!schema || !schema.parameters) {
+      logger.error("Invalid schema provided to validateParameters", { schema });
+      return { valid: false, errors: ["Invalid schema"] };
     }
-  });
-  
-  // Apply validation rules
-  const errors = [];
-  
-  // Check for validationRules first, then fall back to validation-rules
-  const validationRules = schema.validationRules || schema["validation-rules"] || [];
-  
-  console.log("Using validation rules:", validationRules);
-  
-  if (Array.isArray(validationRules)) {
-    validationRules.forEach(rule => {
-      try {
-        const isValid = evaluateExpression(rule.expr, processedParams);
-        
-        if (!isValid) {
-          errors.push(rule.message || `Validation failed: ${rule.expr}`);
-        }
-      } catch (error) {
-        console.error(`Error validating rule "${rule.expr}":`, error);
-        errors.push(`Error in validation rule: ${rule.expr}`);
+    
+    // Ensure numbers are parsed
+    const processedParams = {};
+    
+    schema.parameters.forEach(param => {
+      const name = param.name;
+      const value = params[name];
+      
+      if (param.type === 'number' && typeof value === 'string') {
+        processedParams[name] = parseFloat(value);
+      } else {
+        processedParams[name] = value;
       }
     });
-  }
-  
-  // Check for required fields based on parameter definitions
-  schema.parameters.forEach(param => {
-    const name = param.name;
-    if (!param.default && (processedParams[name] === undefined || processedParams[name] === null || processedParams[name] === "")) {
-      errors.push(`${name} is required`);
+    
+    // Apply validation rules
+    const errors = [];
+    
+    // Check for validationRules first, then fall back to validation-rules
+    const validationRules = schema.validationRules || schema["validation-rules"] || [];
+    
+    logger.debug("Applying validation rules", { ruleCount: validationRules.length });
+    
+    if (Array.isArray(validationRules)) {
+      validationRules.forEach(rule => {
+        try {
+          const isValid = evaluateExpression(rule.expr, processedParams);
+          
+          if (!isValid) {
+            errors.push(rule.message || `Validation failed: ${rule.expr}`);
+          }
+        } catch (error) {
+          handleError(error, ERROR_CATEGORY.VALIDATION, {
+            component: "validateParameters",
+            action: "evaluating rule",
+            rule: rule.expr
+          });
+          errors.push(`Error in validation rule: ${rule.expr}`);
+        }
+      });
     }
-  });
-  
-  return {
-    valid: errors.length === 0,
-    errors: errors
-  };
+    
+    // Check for required fields based on parameter definitions
+    schema.parameters.forEach(param => {
+      const name = param.name;
+      if (!param.default && (processedParams[name] === undefined || processedParams[name] === null || processedParams[name] === "")) {
+        errors.push(`${name} is required`);
+      }
+    });
+    
+    const result = {
+      valid: errors.length === 0,
+      errors: errors
+    };
+    
+    logger.debug("Validation result", result);
+    
+    return result;
+  } catch (error) {
+    handleError(error, ERROR_CATEGORY.VALIDATION, {
+      component: "validateParameters",
+      action: "validating parameters"
+    });
+    return { valid: false, errors: ["Error during validation"] };
+  }
 }
 
 /**
@@ -128,29 +150,39 @@ export function validateParameters(params, schema) {
  * @returns {Object} - Processed parameters with correct types
  */
 export function prepareParameters(params, schema) {
-  const prepared = {};
-  
-  schema.parameters.forEach(param => {
-    const name = param.name;
-    const value = params[name];
+  try {
+    logger.debug("Preparing parameters for sending", { paramCount: Object.keys(params).length });
     
-    // Skip undefined or null values
-    if (value === undefined || value === null || value === '') {
-      // If there's a default value, use it
-      if (param.default !== undefined) {
-        prepared[name] = param.type === 'number' ? 
-                        parseFloat(param.default) : param.default;
+    const prepared = {};
+    
+    schema.parameters.forEach(param => {
+      const name = param.name;
+      const value = params[name];
+      
+      // Skip undefined or null values
+      if (value === undefined || value === null || value === '') {
+        // If there's a default value, use it
+        if (param.default !== undefined) {
+          prepared[name] = param.type === 'number' ? 
+                          parseFloat(param.default) : param.default;
+        }
+        return;
       }
-      return;
-    }
+      
+      // Convert string numbers to actual numbers
+      if (param.type === 'number' && typeof value === 'string') {
+        prepared[name] = parseFloat(value);
+      } else {
+        prepared[name] = value;
+      }
+    });
     
-    // Convert string numbers to actual numbers
-    if (param.type === 'number' && typeof value === 'string') {
-      prepared[name] = parseFloat(value);
-    } else {
-      prepared[name] = value;
-    }
-  });
-  
-  return prepared;
+    return prepared;
+  } catch (error) {
+    handleError(error, ERROR_CATEGORY.VALIDATION, {
+      component: "prepareParameters",
+      action: "preparing parameters for server"
+    });
+    return params; // Return original params if preparation fails
+  }
 }

@@ -1,200 +1,191 @@
 const axios = require('axios');
-const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const filenameUtils = require('../utils/filename-utils');
+const logger = require('../utils/logger')('cad-service');
 
 class CADService {
   constructor() {
     this.apiBaseUrl = config.API_BASE_URL;
     this.clojureServiceUrl = config.CLOJURE_SERVICE_URL;
     
-    console.log(`CADService initialized with API base URL: ${this.apiBaseUrl}`);
-    console.log(`Clojure service URL: ${this.clojureServiceUrl}`);
+    logger.info('CAD service initialized', { 
+      apiBaseUrl: this.apiBaseUrl, 
+      clojureServiceUrl: this.clojureServiceUrl 
+    });
     
     // Ensure temp directory exists
     this.tempDir = path.join(__dirname, '..', 'temp');
     if (!fs.existsSync(this.tempDir)) {
       fs.mkdirSync(this.tempDir, { recursive: true });
-      console.log(`Created temp directory: ${this.tempDir}`);
-    } else {
-      console.log(`Using existing temp directory: ${this.tempDir}`);
+      logger.info('Created temp directory', { path: this.tempDir });
     }
   }
 
-  // Test connectivity to both IPv4 and IPv6 versions of a host
-  async testConnectivity() {
-    const urls = {
-      'IPv4 API': 'http://127.0.0.1:8000/api',
-      'IPv6 API': 'http://[::1]:8000/api',
-      'IPv4 Clojure': 'http://127.0.0.1:3000',
-      'IPv6 Clojure': 'http://[::1]:3000'
-    };
-
-    console.log('Testing connectivity to different IP versions...');
-    
-    for (const [name, url] of Object.entries(urls)) {
-      try {
-        console.log(`Testing ${name} at ${url}...`);
-        const response = await axios.get(url, { timeout: 3000 });
-        console.log(`✅ ${name} is reachable! Status: ${response.status}`);
-      } catch (error) {
-        console.log(`❌ ${name} is NOT reachable: ${error.message}`);
-      }
-    }
-  }
-
+  /**
+   * Generate a model with specified parameters
+   * @param {string} modelType - Type of model to generate
+   * @param {Object} params - Parameters for the model
+   * @returns {Promise<Object>} Generation result with file name
+   */
   async generateModel(modelType, params) {
+    logger.info(`Generating ${modelType} model`, { params });
+    
     try {
       const url = `${this.apiBaseUrl}/generate/${modelType}`;
-      console.log(`Generating ${modelType} with params:`, params);
-      console.log(`Making POST request to: ${url}`);
       
-      // Test connectivity to both IPv4 and IPv6
-      await this.testConnectivity();
-      
-      // Test if the API is reachable
-      try {
-        console.log('Testing API health check...');
-        const healthCheckUrl = `${this.apiBaseUrl.replace(/\/api$/, '')}/api`;
-        console.log(`Health check URL: ${healthCheckUrl}`);
-        const healthCheck = await axios.get(healthCheckUrl);
-        console.log('API health check response:', healthCheck.status, healthCheck.statusText);
-      } catch (healthError) {
-        console.log('API health check failed:', healthError.message);
-        console.log('Error details:', healthError.code || 'No error code');
-        if (healthError.response) {
-          console.log('Response data:', healthError.response.data);
-        } else {
-          console.log('No response from API health check - API server may not be running');
-        }
-      }
+      logger.debug(`Sending request to ${url}`, { params });
       
       const response = await axios.post(url, params);
       
-      console.log('Model generation successful. Response status:', response.status);
-      console.log('Response data:', response.data);
+      logger.info(`Model generation successful for ${modelType}`, {
+        status: response.status,
+        hasData: !!response.data
+      });
       
       // Extract the filename from response
-      let fileName = null;
+      let fileName = this.extractFileName(response.data, modelType, params);
       
-      if (response.data.obj_path) {
-        fileName = filenameUtils.baseFilename(response.data.obj_path);
-      } else if (response.data["obj-path"]) {
-        fileName = filenameUtils.baseFilename(response.data["obj-path"]);
-      } else if (response.data.obj_result && response.data.obj_result.file) {
-        fileName = filenameUtils.baseFilename(response.data.obj_result.file);
-      } else if (response.data["obj-result"] && response.data["obj-result"].file) {
-        fileName = filenameUtils.baseFilename(response.data["obj-result"].file);
-      } else if (response.data.file_name) {
-        fileName = response.data.file_name;
-      } else {
-        // Generate a filename from the model type and parameters if not found
-        fileName = filenameUtils.generateModelFilename(modelType, params);
-      }
-      
-      console.log(`Generated model filename: ${fileName}`);
+      logger.info(`Generated model filename: ${fileName}`);
       
       return {
         ...response.data,
         fileName: fileName
       };
     } catch (error) {
-      console.error('Error details:', {
-        code: error.code || 'No error code',
-        message: error.message,
-        url: `${this.apiBaseUrl}/generate/${modelType}`,
-        params: JSON.stringify(params)
+      this.handleApiError(error, `Failed to generate ${modelType} model`, {
+        modelType,
+        params,
+        url: `${this.apiBaseUrl}/generate/${modelType}`
       });
-      
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
-      } else {
-        console.error('No response object - likely a connectivity issue');
-        console.error('Make sure the FastAPI server is running at:', this.apiBaseUrl);
-      }
-      
-      throw new Error(`Failed to generate ${modelType} model: ${error.message}`);
+      throw error;
     }
   }
 
+  /**
+   * Render a model and get the image
+   * @param {string} fileName - Filename of the model to render
+   * @param {string} modelType - Type of the model
+   * @returns {Promise<string>} Path to the rendered image
+   */
   async renderModel(fileName, modelType) {
     try {
       // Ensure we're using just the base filename without extension
       const baseName = filenameUtils.baseFilename(fileName);
       const url = `${this.apiBaseUrl}/render/${baseName}?model_type=${modelType}&view=front`;
       
-      console.log(`Requesting image render for ${baseName}, model type: ${modelType}`);
-      console.log(`Making GET request to: ${url}`);
+      logger.info(`Rendering model ${baseName}`, { modelType, url });
       
       const response = await axios.get(url, { responseType: 'arraybuffer' });
       
-      console.log('Render successful. Response status:', response.status);
+      logger.info(`Render successful for ${baseName}`, { status: response.status });
       
       // Save the image temporarily
       const tempImagePath = path.join(this.tempDir, `${baseName}_render.png`);
       fs.writeFileSync(tempImagePath, response.data);
-      console.log(`Saved render to: ${tempImagePath}`);
+      
+      logger.debug(`Saved render to ${tempImagePath}`);
       
       return tempImagePath;
     } catch (error) {
-      console.error('Error rendering model image:', {
-        code: error.code || 'No error code',
-        message: error.message,
-        url: `${this.apiBaseUrl}/render/${fileName}?model_type=${modelType}&view=front`
+      this.handleApiError(error, `Failed to render model: ${fileName}`, {
+        fileName,
+        modelType,
+        url: `${this.apiBaseUrl}/render/${fileName}`
       });
-      
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response type:', typeof error.response.data);
-      } else {
-        console.error('No response object - likely a connectivity issue');
-        console.error('Make sure the FastAPI server is running at:', this.apiBaseUrl);
-      }
-      
-      // For now, since the rendering endpoint doesn't exist, we'll throw a specific error
-      throw new Error('Rendering functionality is not yet implemented in the API.');
+      throw error;
     }
   }
   
-  // A workaround method to directly interact with the Clojure service for rendering
-  async directRenderModel(fileName, modelType) {
-    try {
-      // Ensure we're using just the base filename without extension
-      const baseName = filenameUtils.baseFilename(fileName);
-      const url = `${this.clojureServiceUrl}/direct-render/${baseName}?model_type=${modelType}&view=front&size=800`;
-      
-      console.log(`Requesting direct render for ${baseName}, model type: ${modelType}`);
-      console.log(`Making GET request to: ${url}`);
-      
-      const response = await axios.get(url, { responseType: 'arraybuffer' });
-      
-      console.log('Direct render successful. Response status:', response.status);
-      
-      // Save the image temporarily
-      const tempImagePath = path.join(this.tempDir, `${baseName}_direct_render.png`);
-      fs.writeFileSync(tempImagePath, response.data);
-      console.log(`Saved direct render to: ${tempImagePath}`);
-      
-      return tempImagePath;
-    } catch (error) {
-      console.error('Error with direct rendering:', {
-        code: error.code || 'No error code',
-        message: error.message,
-        url: `${this.clojureServiceUrl}/direct-render/${fileName}?model_type=${modelType}&view=front&size=800`
-      });
-      
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-      } else {
-        console.error('No response object - likely a connectivity issue');
-        console.error('Make sure the Clojure service is running at:', this.clojureServiceUrl);
-      }
-      
-      throw new Error('Direct rendering is not implemented in the Clojure service.');
+  /**
+   * Extract filename from the model generation response
+   * @param {Object} data - Response data
+   * @param {string} modelType - Type of model
+   * @param {Object} params - Model parameters
+   * @returns {string} Extracted or generated filename
+   */
+  extractFileName(data, modelType, params) {
+    // Check all possible paths where the filename could be returned
+    if (data.obj_path) {
+      return filenameUtils.baseFilename(data.obj_path);
+    } else if (data["obj-path"]) {
+      return filenameUtils.baseFilename(data["obj-path"]);
+    } else if (data.obj_result && data.obj_result.file) {
+      return filenameUtils.baseFilename(data.obj_result.file);
+    } else if (data["obj-result"] && data["obj-result"].file) {
+      return filenameUtils.baseFilename(data["obj-result"].file);
+    } else if (data.file_name) {
+      return data.file_name;
+    } else {
+      // Generate a filename from the model type and parameters if not found
+      logger.warn('No filename found in response, generating one', { data });
+      return filenameUtils.generateModelFilename(modelType, params);
     }
+  }
+  
+  /**
+   * Handle API errors consistently
+   * @param {Error} error - Caught error
+   * @param {string} message - Error message prefix
+   * @param {Object} context - Additional context
+   * @throws {Error} Rethrows with better message
+   */
+  handleApiError(error, message, context = {}) {
+    let errorMessage = message;
+    let errorDetails = {};
+    
+    if (error.response) {
+      // The request was made and the server responded with a non-2xx status
+      errorDetails = {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data
+      };
+      
+      errorMessage += `: ${error.response.status} ${error.response.statusText}`;
+      
+      if (typeof error.response.data === 'string') {
+        errorMessage += ` - ${error.response.data}`;
+      } else if (error.response.data && error.response.data.message) {
+        errorMessage += ` - ${error.response.data.message}`;
+      }
+    } else if (error.request) {
+      // The request was made but no response was received
+      errorDetails = {
+        request: {
+          method: error.request.method,
+          path: error.request.path
+        }
+      };
+      
+      if (error.code === 'ECONNREFUSED') {
+        errorMessage += `: Connection refused at ${error.address || error.host}:${error.port}`;
+      } else {
+        errorMessage += `: ${error.code || 'No response received'}`;
+      }
+    } else {
+      // Something happened in setting up the request
+      errorMessage += `: ${error.message}`;
+    }
+    
+    logger.error(errorMessage, {
+      ...context,
+      error: {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      },
+      ...errorDetails
+    });
+    
+    // Create a new error with the enhanced message
+    const enhancedError = new Error(errorMessage);
+    enhancedError.originalError = error;
+    enhancedError.context = context;
+    enhancedError.details = errorDetails;
+    
+    throw enhancedError;
   }
 }
 
