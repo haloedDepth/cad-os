@@ -101,14 +101,35 @@ function setupEventHandlers() {
     
     if (!command) {
       logger.warn(`No command matching ${commandName} was found`);
+      try {
+        // Even if we don't have a command, acknowledge the interaction
+        await interaction.reply({ 
+          content: `Command '${commandName}' not found.`, 
+          ephemeral: true 
+        });
+      } catch (error) {
+        logger.error(`Failed to reply to unknown command ${commandName}`, { error: error.message });
+      }
       return;
     }
     
     try {
       logger.debug(`Executing command: ${commandName}`);
-      await command.execute(interaction);
+      // Make sure to wrap the command execution in a try-catch
+      await Promise.resolve(command.execute(interaction))
+        .catch(error => {
+          logger.error(`Error in command execution for ${commandName}`, { error: error.message });
+          throw error; // Re-throw to be caught by the outer try-catch
+        });
     } catch (error) {
-      await handleCommandError(error, interaction, commandName);
+      try {
+        await handleCommandError(error, interaction, commandName);
+      } catch (handlerError) {
+        logger.error(`Error handler failed for ${commandName}`, { 
+          originalError: error.message, 
+          handlerError: handlerError.message 
+        });
+      }
     }
   });
 }

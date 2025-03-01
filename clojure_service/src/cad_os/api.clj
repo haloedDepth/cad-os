@@ -9,7 +9,8 @@
             [cad-os.formats :as formats]
             [cad-os.render :as render]
             [cad-os.utils.logger :as logger]
-            [cad-os.utils.errors :as errors])
+            [cad-os.utils.errors :as errors]
+            [clojure.string :as str])
   (:gen-class))
 
 ;; Initialize logger
@@ -157,111 +158,153 @@
   ;; Endpoint for rendering with default view (front)
   (GET "/render/:filename" [filename :as request]
     ((:info log) "Handling render request with default view" {:filename filename})
-    (let [model-type (get-in request [:params :model_type])
-          size (get-in request [:params :size] 800)
-          white-bg (get-in request [:params :white_background] true)
+    (try
+      (let [model-type (get-in request [:params :model_type])
+            size (get-in request [:params :size] 800)
+            white-bg (get-in request [:params :white_background] true)
 
-          ;; Create a temporary directory for rendering
-          output-dir (str "render_output/" filename)
-          _ (io/make-parents (str output-dir "/placeholder"))
+            ;; Create a temporary directory for rendering
+            output-dir (str "render_output/" filename)
+            _ (io/make-parents (str output-dir "/placeholder"))
 
-          ;; Generate the view with default (front) view
-          render-options {:size size
-                          :white-background white-bg}
+            ;; Generate the view with default (front) view
+            render-options {:size size
+                            :white-background white-bg}
 
-          ;; Call the render function with default front view
-          result (render/generate-orbit-view
-                  filename
-                  (if model-type [model-type] [])  ;; Handle nil model-type properly
-                  0  ;; Default azimuth for front view
-                  30 ;; Default elevation for front view
-                  (str output-dir "/" filename "_front.png")
-                  render-options)]
+            ;; Call the render function with default front view
+            _ ((:info log) "Generating render for model type" {:model-type model-type :filename filename})
+            ;; Ensure model type is a list if it's not nil or an empty string
+            model-types (cond
+                          (and model-type (not= model-type "")) [(str model-type)]
+                          :else [])
 
-      (if (= (:status result) "success")
-        {:status 200
-         :headers {"Content-Type" "image/png"
-                   "Content-Disposition" (str "attachment; filename=\""
-                                              filename "_front.png\"")}
-         :body (io/file (:file result))}
-        (errors/server-error (:message result)
-                             {:filename filename
-                              :view "front"
-                              :model_type model-type}))))
+            ;; Add fallback object names if none provided
+            objects (if (empty? model-types)
+                      (let [inferred-type (first (str/split filename #"-"))]
+                        [(or inferred-type "cylinder")])
+                      model-types)
+
+            _ ((:info log) "Rendering with objects" {:objects objects})
+
+            result (render/generate-orbit-view
+                    filename
+                    objects  ;; Better object handling
+                    0  ;; Default azimuth for front view
+                    30 ;; Default elevation for front view
+                    (str output-dir "/" filename "_front.png")
+                    render-options)]
+
+        (if (= (:status result) "success")
+          {:status 200
+           :headers {"Content-Type" "image/png"
+                     "Content-Disposition" (str "attachment; filename=\""
+                                                filename "_front.png\"")}
+           :body (io/file (:file result))}
+          (do
+            ((:error log) "Error rendering model" {:result result})
+            (errors/server-error (:message result)
+                                 {:filename filename
+                                  :view "front"
+                                  :model_type model-type}))))
+      (catch Exception e
+        ((:error log) "Exception rendering model" {:error (.getMessage e)} e)
+        (errors/server-error (str "Error rendering model: " (.getMessage e))
+                             {:filename filename}))))
 
   (GET "/render/:filename/:view" [filename view :as request]
     ((:info log) "Handling render request" {:filename filename :view view})
-    (let [model-type (get-in request [:params :model_type])
-          size (get-in request [:params :size] 800)
-          white-bg (get-in request [:params :white_background] true)
+    (try
+      (let [model-type (get-in request [:params :model_type])
+            size (get-in request [:params :size] 800)
+            white-bg (get-in request [:params :white_background] true)
 
-          ;; Determine views based on the view parameter
-          view-keyword (keyword view)
+            ;; Determine views based on the view parameter
+            view-keyword (keyword view)
 
-          ;; Create a temporary directory for rendering
-          output-dir (str "render_output/" filename)
-          _ (io/make-parents (str output-dir "/placeholder"))
+            ;; Create a temporary directory for rendering
+            output-dir (str "render_output/" filename)
+            _ (io/make-parents (str output-dir "/placeholder"))
 
-          ;; Generate the view
-          render-options {:size size
-                          :white-background white-bg}
+            ;; Generate the view
+            render-options {:size size
+                            :white-background white-bg}
 
-          ;; Call the render function
-          result (case view-keyword
-                   :front (render/generate-orbit-view
+            ;; Ensure model type is a list if it's not nil or an empty string
+            model-types (cond
+                          (and model-type (not= model-type "")) [(str model-type)]
+                          :else [])
+
+            ;; Add fallback object names if none provided
+            objects (if (empty? model-types)
+                      (let [inferred-type (first (str/split filename #"-"))]
+                        [(or inferred-type "cylinder")])
+                      model-types)
+
+            _ ((:info log) "Rendering with objects" {:objects objects :model-type model-type})
+
+            ;; Call the render function
+            result (case view-keyword
+                     :front (render/generate-orbit-view
+                             filename
+                             objects
+                             0
+                             30
+                             (str output-dir "/" filename "_front.png")
+                             render-options)
+                     :right (render/generate-orbit-view
+                             filename
+                             objects
+                             90
+                             30
+                             (str output-dir "/" filename "_right.png")
+                             render-options)
+                     :back (render/generate-orbit-view
+                            filename
+                            objects
+                            180
+                            30
+                            (str output-dir "/" filename "_back.png")
+                            render-options)
+                     :left (render/generate-orbit-view
+                            filename
+                            objects
+                            270
+                            30
+                            (str output-dir "/" filename "_left.png")
+                            render-options)
+                     :top (render/generate-orbit-view
                            filename
-                           (if model-type [model-type] [])
+                           objects
                            0
-                           30
-                           (str output-dir "/" filename "_front.png")
-                           render-options)
-                   :right (render/generate-orbit-view
-                           filename
-                           (if model-type [model-type] [])
                            90
-                           30
-                           (str output-dir "/" filename "_right.png")
+                           (str output-dir "/" filename "_top.png")
                            render-options)
-                   :back (render/generate-orbit-view
-                          filename
-                          (if model-type [model-type] [])
-                          180
-                          30
-                          (str output-dir "/" filename "_back.png")
-                          render-options)
-                   :left (render/generate-orbit-view
-                          filename
-                          (if model-type [model-type] [])
-                          270
-                          30
-                          (str output-dir "/" filename "_left.png")
-                          render-options)
-                   :top (render/generate-orbit-view
-                         filename
-                         (if model-type [model-type] [])
-                         0
-                         90
-                         (str output-dir "/" filename "_top.png")
-                         render-options)
-                   ;; Default to front view
-                   (render/generate-orbit-view
-                    filename
-                    (if model-type [model-type] [])
-                    0
-                    30
-                    (str output-dir "/" filename "_front.png")
-                    render-options))]
+                     ;; Default to front view
+                     (render/generate-orbit-view
+                      filename
+                      objects
+                      0
+                      30
+                      (str output-dir "/" filename "_front.png")
+                      render-options))]
 
-      (if (= (:status result) "success")
-        {:status 200
-         :headers {"Content-Type" "image/png"
-                   "Content-Disposition" (str "attachment; filename=\""
-                                              filename "_" (name view-keyword) ".png\"")}
-         :body (io/file (:file result))}
-        (errors/server-error (:message result)
+        (if (= (:status result) "success")
+          {:status 200
+           :headers {"Content-Type" "image/png"
+                     "Content-Disposition" (str "attachment; filename=\""
+                                                filename "_" (name view-keyword) ".png\"")}
+           :body (io/file (:file result))}
+          (do
+            ((:error log) "Error rendering view" {:result result})
+            (errors/server-error (:message result)
+                                 {:filename filename
+                                  :view view
+                                  :model_type model-type}))))
+      (catch Exception e
+        ((:error log) "Exception rendering view" {:error (.getMessage e)} e)
+        (errors/server-error (str "Error rendering view: " (.getMessage e))
                              {:filename filename
-                              :view view
-                              :model_type model-type})))))
+                              :view view})))))
 
 (def app
   (-> app-routes
@@ -281,6 +324,9 @@
   ((:info log) "Loading model namespaces")
   (require 'cad-os.models.washer)
   (require 'cad-os.models.cylinder)
+
+  ;; Create necessary directories for rendering
+  (io/make-parents "render_output/placeholder")
 
   ((:info log) "Starting CAD-OS API server on port 3000")
   ((:info log) "Available model types" {:types (registry/get-model-types)})

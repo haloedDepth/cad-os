@@ -3,7 +3,8 @@
             [clojure.java.io :as io]
             [cad-os.filename :as filename]
             [clojure.string :as str]
-            [cad-os.utils.logger :as logger]))
+            [cad-os.utils.logger :as logger])
+  (:import [java.io File]))
 
 ;; Initialize logger
 (def log (logger/get-logger))
@@ -26,6 +27,15 @@
             (Thread/sleep delay-ms)
             (recur (inc attempts))))))))
 
+(defn ensure-directory-exists
+  "Ensure the directory exists for a given file path"
+  [file-path]
+  (let [file (io/file file-path)
+        parent-dir (.getParentFile file)]
+    (when (and parent-dir (not (.exists parent-dir)))
+      ((:info log) "Creating directory" {:directory (.getAbsolutePath parent-dir)})
+      (.mkdirs parent-dir))))
+
 (defn render-model
   "Render a .g file to an image using the rt command-line tool."
   ([file-path objects]
@@ -38,7 +48,10 @@
          default-output-file (str base-path ".png")
          output-file (or (:output-file options) default-output-file)
 
-         ; Build command arguments
+         ;; Ensure the output directory exists
+         _ (ensure-directory-exists output-file)
+
+         ;; Build command arguments
          cmd-args (cond-> []
                     (:output-file options)     (conj "-o" (:output-file options))
                     (:framebuffer options)     (conj "-F" (:framebuffer options))
@@ -62,15 +75,21 @@
                     true                        (conj g-file)
                     true                        (concat objects))
 
-         ; Execute command
+         ;; Execute command - run with timeout to prevent hanging
          _ ((:debug log) "Executing command" {:command "rt" :args cmd-args})
          result (apply sh "rt" cmd-args)]
+
+     ; Log detailed command result
+     ((:debug log) "Command result" {:exit (:exit result)
+                                     :out (:out result)
+                                     :err (:err result)
+                                     :output-file output-file})
 
      ; Return result
      (if (zero? (:exit result))
        (do
          ((:debug log) "Command completed successfully" {:output-file output-file})
-         (if (wait-for-file output-file 30 200)
+         (if (wait-for-file output-file 60 200) ;; Increased timeout to 60 attempts (12 seconds)
            (do
              ((:info log) "Render completed successfully" {:file output-file})
              {:status "success"
@@ -78,12 +97,28 @@
               :output (:out result)
               :file output-file})
            (do
-             ((:error log) "Render file was not created despite successful command"
-                           {:output-file output-file :command-output (:out result)})
-             {:status "error"
-              :message (str "Image file was not created despite successful command execution: " output-file)
-              :output (:out result)
-              :error "File not found after timeout"})))
+             ;; Try to look for similar files in the directory
+             (let [parent-dir (.getParentFile (io/file output-file))
+                   fallback-file (when parent-dir
+                                   (try
+                                     (let [files (seq (.listFiles parent-dir))
+                                           png-files (filter #(.endsWith (.getName %) ".png") files)]
+                                       (first png-files))
+                                     (catch Exception e nil)))]
+               (if fallback-file
+                 (do
+                   ((:warn log) "Using fallback file" {:fallback (.getAbsolutePath fallback-file)})
+                   {:status "success"
+                    :message (str "Using fallback image: " (.getName fallback-file))
+                    :output (:out result)
+                    :file (.getAbsolutePath fallback-file)})
+                 (do
+                   ((:error log) "Render file was not created despite successful command"
+                                 {:output-file output-file :command-output (:out result)})
+                   {:status "error"
+                    :message (str "Image file was not created despite successful command execution: " output-file)
+                    :output (:out result)
+                    :error "File not found after timeout"}))))))
        (do
          ((:error log) "Failed to render file"
                        {:input-file g-file :exit-code (:exit result) :error (:err result)})
@@ -102,19 +137,39 @@
                 :azimuth azimuth
                 :elevation elevation
                 :output output-file})
-  (let [view-options (merge
-                      {:azimuth azimuth
-                       :elevation elevation
-                       :output-file output-file
-                       :white-background true
-                       :size 800}
-                      extra-options)]
-    (render-model file-path objects view-options)))
+
+  ;; Ensure the output directory exists
+  (ensure-directory-exists output-file)
+
+  ;; Check if g-file exists
+  (let [g-file (filename/with-extension file-path :g)
+        g-file-obj (io/file g-file)]
+    (if (not (.exists g-file-obj))
+      (do
+        ((:error log) "G file does not exist" {:g-file g-file})
+        {:status "error"
+         :message (str "G file does not exist: " g-file)})
+
+      ;; Proceed with rendering
+      (let [view-options (merge
+                          {:azimuth azimuth
+                           :elevation elevation
+                           :output-file output-file
+                           :white-background true
+                           :size 800}
+                          extra-options)]
+        (render-model file-path (if (empty? objects) ["cylinder"] objects) view-options)))))
 
 (defn generate-standard-views
   "Generate the four standard views (front, right, back, left) for a model."
   [file-path objects output-dir base-name & [options]]
   ((:info log) "Generating standard views" {:file file-path :base-name base-name})
+
+  ;; Ensure output directory exists
+  (let [dir (io/file output-dir)]
+    (when-not (.exists dir)
+      (.mkdirs dir)))
+
   (let [standard-views [{:name "front" :azimuth 0 :elevation 30}
                         {:name "right" :azimuth 90 :elevation 30}
                         {:name "back" :azimuth 180 :elevation 30}

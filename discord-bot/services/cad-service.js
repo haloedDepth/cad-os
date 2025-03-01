@@ -5,6 +5,10 @@ const config = require('../config');
 const filenameUtils = require('../utils/filename-utils');
 const logger = require('../utils/logger')('cad-service');
 
+// Set default timeouts to prevent hanging requests
+const DEFAULT_TIMEOUT = 10000; // 10 seconds
+const RENDER_TIMEOUT = 30000;  // 30 seconds for rendering which can take longer
+
 class CADService {
   constructor() {
     this.apiBaseUrl = config.API_BASE_URL;
@@ -38,7 +42,7 @@ class CADService {
       
       logger.debug(`Sending request to ${url}`);
       
-      const response = await axios.get(url);
+      const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
       
       logger.info('Model types fetched successfully', {
         status: response.status,
@@ -72,7 +76,10 @@ class CADService {
       this.handleApiError(error, 'Failed to fetch model types', {
         url: `${this.apiBaseUrl}/models/types`
       });
-      throw error;
+      
+      // Return fallback types instead of throwing
+      logger.warn("Error fetching model types, using fallback list");
+      return ["washer", "cylinder"];
     }
   }
 
@@ -95,7 +102,7 @@ class CADService {
       
       logger.debug(`Sending request to ${url}`);
       
-      const response = await axios.get(url);
+      const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
       
       logger.info(`Schema fetched successfully for ${modelType}`, {
         status: response.status,
@@ -126,7 +133,11 @@ class CADService {
         modelType,
         url: `${this.apiBaseUrl}/models/schema/${modelType}`
       });
-      throw error;
+      
+      // Return a minimal fallback schema
+      const fallbackSchema = this.getFallbackSchema(modelType);
+      this.schemaCache[modelType] = fallbackSchema;
+      return fallbackSchema;
     }
   }
 
@@ -142,7 +153,7 @@ class CADService {
       
       logger.debug(`Sending request to ${url}`);
       
-      const response = await axios.get(url);
+      const response = await axios.get(url, { timeout: DEFAULT_TIMEOUT });
       
       logger.info('All schemas fetched successfully', {
         status: response.status,
@@ -177,7 +188,9 @@ class CADService {
       this.handleApiError(error, 'Failed to fetch all schemas', {
         url: `${this.apiBaseUrl}/models/schemas`
       });
-      throw error;
+      
+      // Return empty schemas
+      return {};
     }
   }
 
@@ -195,7 +208,7 @@ class CADService {
       
       logger.debug(`Sending request to ${url}`, { params });
       
-      const response = await axios.post(url, params);
+      const response = await axios.post(url, params, { timeout: RENDER_TIMEOUT });
       
       logger.info(`Model generation successful for ${modelType}`, {
         status: response.status,
@@ -235,7 +248,10 @@ class CADService {
       
       logger.info(`Rendering model ${baseName}`, { modelType, url });
       
-      const response = await axios.get(url, { responseType: 'arraybuffer' });
+      const response = await axios.get(url, { 
+        responseType: 'arraybuffer',
+        timeout: RENDER_TIMEOUT 
+      });
       
       logger.info(`Render successful for ${baseName}`, { status: response.status });
       
@@ -283,6 +299,85 @@ class CADService {
   }
   
   /**
+   * Get a fallback schema for when API is unavailable
+   * @param {string} modelType - Type of model
+   * @returns {Object} Basic schema
+   */
+  getFallbackSchema(modelType) {
+    logger.info(`Creating fallback schema for ${modelType}`);
+    
+    if (modelType === 'washer') {
+      return {
+        name: "Washer",
+        description: "A simple washer (ring) with inner and outer diameters",
+        parameters: [
+          {
+            name: "outer-diameter",
+            type: "number",
+            description: "Outer diameter of the washer",
+            default: 10.0
+          },
+          {
+            name: "inner-diameter",
+            type: "number",
+            description: "Inner diameter of the washer",
+            default: 6.0
+          },
+          {
+            name: "thickness",
+            type: "number",
+            description: "Thickness of the washer",
+            default: 2.0
+          }
+        ],
+        validationRules: [
+          {
+            expr: "outer-diameter > inner-diameter",
+            message: "Outer diameter must be greater than inner diameter"
+          }
+        ]
+      };
+    } else if (modelType === 'cylinder') {
+      return {
+        name: "Cylinder",
+        description: "A simple cylinder with specified radius and height",
+        parameters: [
+          {
+            name: "radius",
+            type: "number",
+            description: "Radius of the cylinder",
+            default: 5.0
+          },
+          {
+            name: "height",
+            type: "number",
+            description: "Height of the cylinder",
+            default: 10.0
+          }
+        ],
+        validationRules: [
+          {
+            expr: "radius > 0.1",
+            message: "Radius must be greater than 0.1"
+          },
+          {
+            expr: "height > 0.1",
+            message: "Height must be greater than 0.1"
+          }
+        ]
+      };
+    } else {
+      // Generic fallback for unknown model types
+      return {
+        name: modelType,
+        description: `${modelType} model`,
+        parameters: [],
+        validationRules: []
+      };
+    }
+  }
+  
+  /**
    * Handle API errors consistently
    * @param {Error} error - Caught error
    * @param {string} message - Error message prefix
@@ -319,6 +414,8 @@ class CADService {
       
       if (error.code === 'ECONNREFUSED') {
         errorMessage += `: Connection refused at ${error.address || error.host}:${error.port}`;
+      } else if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT') {
+        errorMessage += `: Request timed out after ${error.timeout || 'some time'}`;
       } else {
         errorMessage += `: ${error.code || 'No response received'}`;
       }

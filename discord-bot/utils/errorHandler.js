@@ -33,6 +33,12 @@ async function handleCommandError(error, interaction, commandName, context = {})
     ...context
   });
   
+  // If this is an "Unknown interaction" error, just log it and return
+  if (error.code === 10062 || error.message.includes('Unknown interaction')) {
+    logger.warn(`Interaction ${interaction.id} has expired or was already handled [${errorId}]`);
+    return;
+  }
+  
   // Determine if the error is from the CAD service
   const isCadServiceError = error.message && (
     error.message.includes('ECONNREFUSED') ||
@@ -64,10 +70,27 @@ async function handleCommandError(error, interaction, commandName, context = {})
   
   // Try to respond to the interaction
   try {
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content: errorMessage });
+    if (interaction.replied || interaction.deferred) {
+      // Use catch to handle any errors without throwing
+      await interaction.editReply({ content: errorMessage }).catch(replyErr => {
+        logger.error(`Failed to edit reply for error ${errorId}`, {
+          originalError: error.message,
+          replyError: replyErr.message,
+          interactionId: interaction.id
+        });
+      });
     } else {
-      await interaction.reply({ content: errorMessage, ephemeral: true });
+      // Use catch to handle any errors without throwing
+      await interaction.reply({ 
+        content: errorMessage, 
+        ephemeral: true 
+      }).catch(replyErr => {
+        logger.error(`Failed to reply for error ${errorId}`, {
+          originalError: error.message,
+          replyError: replyErr.message,
+          interactionId: interaction.id
+        });
+      });
     }
   } catch (replyError) {
     logger.error(`Failed to send error message to user for error ${errorId}`, {
@@ -116,7 +139,6 @@ function formatInteractionForLogging(interaction) {
     channelId: interaction.channelId,
     guildId: interaction.guildId,
     userId: interaction.user?.id,
-    commandName: interaction.commandName,
     options: formatOptionsForLogging(interaction.options)
   };
 }

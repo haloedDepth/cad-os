@@ -102,29 +102,43 @@ module.exports = {
     .setDescription('Generate 3D models (loading available types...)'),
   
   async execute(interaction) {
+    // Initialize params and modelType at the beginning to avoid reference errors
+    let params = {};
+    let modelType = '';
+    let isInteractionDeferred = false;
+    
     try {
+      // CRITICAL: DEFER THE INTERACTION IMMEDIATELY - no processing before this!
+      // This is step #1 - nothing should happen before this
+      try {
+        logger.debug('Attempting to defer reply');
+        // This tells Discord we're working on it and will respond later
+        await interaction.deferReply();
+        isInteractionDeferred = true;
+        logger.info('Interaction deferred successfully');
+      } catch (deferError) {
+        logger.error('Failed to defer interaction', { error: deferError.message });
+        return; // Can't continue if we couldn't secure the interaction
+      }
+      
+      // Now log that we're starting (after deferring)
       logger.info('Model command execution started', {
         userId: interaction.user.id,
         guildId: interaction.guildId
       });
       
-      // Immediately defer the reply to prevent timeout
-      await interaction.deferReply();
-      logger.debug('Reply deferred');
-      
       // Get selected model type from subcommand
-      const modelType = interaction.options.getSubcommand();
+      modelType = interaction.options.getSubcommand();
       logger.info(`Selected model type: ${modelType}`);
       
       // Get schema for the selected model type
+      logger.debug(`Fetching schema for: ${modelType}`);
       const schema = await cadService.getModelSchema(modelType);
       logger.info(`Retrieved schema for ${modelType}`, { 
         paramCount: schema.parameters?.length || 0 
       });
       
       // Extract parameters from interaction based on schema
-      const params = {};
-      
       if (schema.parameters && Array.isArray(schema.parameters)) {
         schema.parameters.forEach(param => {
           // Skip hidden parameters
@@ -161,23 +175,36 @@ module.exports = {
       if (!validation.valid) {
         const errorMessage = `Validation errors:\n${validation.errors.join('\n')}`;
         logger.warn('Parameter validation failed', { errors: validation.errors });
-        return interaction.editReply(errorMessage);
+        if (isInteractionDeferred) {
+          return interaction.editReply(errorMessage);
+        }
+        return;
       }
       
       // Format parameter list for the reply message
       const paramList = validator.formatParameterList(params, schema);
       
-      await interaction.editReply(
-        `Generating ${modelType} model with parameters:\n${paramList}`
-      );
+      if (isInteractionDeferred) {
+        await interaction.editReply(
+          `Generating ${modelType} model with parameters:\n${paramList}`
+        );
+      }
       
       try {
         // Generate the model
+        logger.debug('Starting model generation');
         const result = await cadService.generateModel(modelType, params);
         logger.info('Model generation successful', { result });
         
         // Get the filename
         const fileName = result.fileName;
+        
+        // Update the message to show progress
+        if (isInteractionDeferred) {
+          await interaction.editReply(
+            `${modelType} model generated successfully! Preparing rendering...`
+          );
+        }
         
         // Try to render the model and get an image
         try {
@@ -188,11 +215,13 @@ module.exports = {
           // Send the rendered image
           const attachment = new AttachmentBuilder(imagePath, { name: `${modelType}_render.png` });
           
-          await interaction.editReply({
-            content: `${modelType} model generated successfully!\n` +
-                    `Parameters:\n${paramList}`,
-            files: [attachment]
-          });
+          if (isInteractionDeferred) {
+            await interaction.editReply({
+              content: `${modelType} model generated successfully!\n` +
+                      `Parameters:\n${paramList}`,
+              files: [attachment]
+            });
+          }
           
           logger.info('Sent message with rendered image');
         } catch (renderError) {
@@ -201,21 +230,41 @@ module.exports = {
           });
           
           // Just send model info if rendering failed
-          await interaction.editReply({
-            content: `${modelType} model generated successfully!\n` +
-                    `Parameters:\n${paramList}\n` +
-                    `Model file: ${fileName}\n\n` +
-                    `(Failed to render model image: ${renderError.message})`
-          });
+          if (isInteractionDeferred) {
+            await interaction.editReply({
+              content: `${modelType} model generated successfully!\n` +
+                      `Parameters:\n${paramList}\n` +
+                      `Model file: ${fileName}\n\n` +
+                      `(Failed to render model image: ${renderError.message})`
+            });
+          }
         }
       } catch (error) {
         throw error;
       }
     } catch (error) {
-      await handleCommandError(error, interaction, 'model', {
-        modelType: interaction.options.getSubcommand(),
-        params
-      });
+      try {
+        // Only try to handle command error if we have successfully deferred the interaction
+        if (isInteractionDeferred) {
+          await handleCommandError(error, interaction, 'model', {
+            modelType,
+            params
+          });
+        } else {
+          // Just log the error if we can't respond to the interaction
+          logger.error(`Error in model command (interaction not deferred)`, {
+            error: error.message,
+            modelType,
+            params
+          });
+        }
+      } catch (handlerError) {
+        // If the error handler itself fails, just log it
+        logger.error('Error handler failed', { 
+          originalError: error.message, 
+          handlerError: handlerError.message 
+        });
+      }
     }
   },
 };
