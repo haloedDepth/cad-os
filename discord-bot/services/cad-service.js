@@ -21,6 +21,164 @@ class CADService {
       fs.mkdirSync(this.tempDir, { recursive: true });
       logger.info('Created temp directory', { path: this.tempDir });
     }
+    
+    // Cache for model schemas
+    this.schemaCache = {};
+  }
+
+  /**
+   * Get all available model types
+   * @returns {Promise<string[]>} List of model types
+   */
+  async getModelTypes() {
+    logger.info('Fetching available model types');
+    
+    try {
+      const url = `${this.apiBaseUrl}/models/types`;
+      
+      logger.debug(`Sending request to ${url}`);
+      
+      const response = await axios.get(url);
+      
+      logger.info('Model types fetched successfully', {
+        status: response.status,
+        hasData: !!response.data
+      });
+      
+      // Extract the model types from response
+      let modelTypes = [];
+      if (Array.isArray(response.data)) {
+        modelTypes = response.data;
+      } else if (response.data.model_types && Array.isArray(response.data.model_types)) {
+        modelTypes = response.data.model_types;
+      } else {
+        logger.warn("Unexpected response format for model types", { data: response.data });
+        // Try to extract model types if possible
+        if (typeof response.data === 'object') {
+          modelTypes = Object.keys(response.data).filter(key => 
+            Array.isArray(response.data[key]) || typeof response.data[key] === 'object');
+        }
+      }
+      
+      if (modelTypes.length === 0) {
+        // Fallback to hardcoded models if API fails
+        logger.warn("No model types returned, using fallback list");
+        modelTypes = ["washer", "cylinder"];
+      }
+      
+      logger.info(`Loaded ${modelTypes.length} model types`, { modelTypes });
+      return modelTypes;
+    } catch (error) {
+      this.handleApiError(error, 'Failed to fetch model types', {
+        url: `${this.apiBaseUrl}/models/types`
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get schema for a specific model type
+   * @param {string} modelType - Type of model
+   * @returns {Promise<Object>} Schema for the model type
+   */
+  async getModelSchema(modelType) {
+    // Check cache first
+    if (this.schemaCache[modelType]) {
+      logger.debug(`Using cached schema for ${modelType}`);
+      return this.schemaCache[modelType];
+    }
+    
+    logger.info(`Fetching schema for model type: ${modelType}`);
+    
+    try {
+      const url = `${this.apiBaseUrl}/models/schema/${modelType}`;
+      
+      logger.debug(`Sending request to ${url}`);
+      
+      const response = await axios.get(url);
+      
+      logger.info(`Schema fetched successfully for ${modelType}`, {
+        status: response.status,
+        hasData: !!response.data
+      });
+      
+      // Process the schema
+      const schema = response.data;
+      
+      // Convert validation_rules to camelCase for frontend
+      if (schema.validation_rules) {
+        schema.validationRules = schema.validation_rules;
+        delete schema.validation_rules;
+      }
+      
+      // Convert param_names to camelCase for frontend
+      if (schema.param_names) {
+        schema.paramNames = schema.param_names;
+        delete schema.param_names;
+      }
+      
+      // Cache the schema
+      this.schemaCache[modelType] = schema;
+      
+      return schema;
+    } catch (error) {
+      this.handleApiError(error, `Failed to fetch schema for ${modelType}`, {
+        modelType,
+        url: `${this.apiBaseUrl}/models/schema/${modelType}`
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get all schemas at once
+   * @returns {Promise<Object>} Map of model types to schemas
+   */
+  async getAllSchemas() {
+    logger.info('Fetching all model schemas');
+    
+    try {
+      const url = `${this.apiBaseUrl}/models/schemas`;
+      
+      logger.debug(`Sending request to ${url}`);
+      
+      const response = await axios.get(url);
+      
+      logger.info('All schemas fetched successfully', {
+        status: response.status,
+        hasData: !!response.data
+      });
+      
+      // Get schemas from the response
+      const schemas = response.data.schemas || {};
+      
+      // Process and cache each schema
+      Object.entries(schemas).forEach(([modelType, schema]) => {
+        // Convert validation-rules to camelCase
+        if (schema.validation_rules) {
+          schema.validationRules = schema.validation_rules;
+          delete schema.validation_rules;
+        }
+        
+        // Convert param-names to camelCase
+        if (schema.param_names) {
+          schema.paramNames = schema.param_names;
+          delete schema.param_names;
+        }
+        
+        // Cache the schema
+        this.schemaCache[modelType] = schema;
+      });
+      
+      logger.info(`Loaded and cached schemas for ${Object.keys(schemas).length} models`);
+      
+      return schemas;
+    } catch (error) {
+      this.handleApiError(error, 'Failed to fetch all schemas', {
+        url: `${this.apiBaseUrl}/models/schemas`
+      });
+      throw error;
+    }
   }
 
   /**

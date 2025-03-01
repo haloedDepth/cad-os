@@ -22,9 +22,8 @@ async function init() {
   try {
     logger.info('Starting CAD-OS Discord Bot');
     
-    // Load commands
-    client.commands = new Collection();
-    loadCommands();
+    // Load commands (now async)
+    await loadCommands();
     
     // Set up event handlers
     setupEventHandlers();
@@ -39,26 +38,43 @@ async function init() {
 }
 
 // Load command files
-function loadCommands() {
-  const commandsPath = path.join(__dirname, 'commands');
-  const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-  
-  logger.info(`Loading ${commandFiles.length} command files`);
-  
-  for (const file of commandFiles) {
-    try {
-      const filePath = path.join(commandsPath, file);
-      const command = require(filePath);
-      
-      if ('data' in command && 'execute' in command) {
-        logger.debug(`Registering command: ${command.data.name}`);
-        client.commands.set(command.data.name, command);
-      } else {
-        logger.warn(`Command file ${file} is missing required properties`);
+async function loadCommands() {
+  try {
+    client.commands = new Collection();
+    const commandsPath = path.join(__dirname, 'commands');
+    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+    
+    logger.info(`Loading ${commandFiles.length} command files`);
+    
+    for (const file of commandFiles) {
+      try {
+        const filePath = path.join(commandsPath, file);
+        const command = require(filePath);
+        
+        if ('data' in command && 'execute' in command) {
+          // If this is the dynamic model command, we need to initialize it first
+          if (command.getData && typeof command.getData === 'function') {
+            try {
+              logger.info(`Initializing dynamic command: ${command.data.name}`);
+              await command.getData();
+            } catch (error) {
+              logger.error(`Error initializing dynamic command: ${command.data.name}`, { error: error.stack });
+              logger.info('Command will use default data');
+            }
+          }
+          
+          logger.debug(`Registering command: ${command.data.name}`);
+          client.commands.set(command.data.name, command);
+        } else {
+          logger.warn(`Command file ${file} is missing required properties`);
+        }
+      } catch (error) {
+        handleStartupError(error, 'command-loading', { file });
       }
-    } catch (error) {
-      handleStartupError(error, 'command-loading', { file });
     }
+  } catch (error) {
+    handleStartupError(error, 'commands-loading', { critical: true });
+    throw error;
   }
 }
 
@@ -97,5 +113,13 @@ function setupEventHandlers() {
   });
 }
 
-// Start the bot
-init();
+// Start the bot and keep the process running
+(async () => {
+  try {
+    await init();
+    logger.info('Bot initialization complete');
+  } catch (error) {
+    logger.error('Failed to initialize bot', { error: error.stack });
+    process.exit(1);
+  }
+})();
