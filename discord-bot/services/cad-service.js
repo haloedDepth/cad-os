@@ -272,31 +272,31 @@ class CADService {
     }
   }
   
-  /**
-   * Extract filename from the model generation response
-   * @param {Object} data - Response data
-   * @param {string} modelType - Type of model
-   * @param {Object} params - Model parameters
-   * @returns {string} Extracted or generated filename
-   */
-  extractFileName(data, modelType, params) {
-    // Check all possible paths where the filename could be returned
-    if (data.obj_path) {
-      return filenameUtils.baseFilename(data.obj_path);
-    } else if (data["obj-path"]) {
-      return filenameUtils.baseFilename(data["obj-path"]);
-    } else if (data.obj_result && data.obj_result.file) {
-      return filenameUtils.baseFilename(data.obj_result.file);
-    } else if (data["obj-result"] && data["obj-result"].file) {
-      return filenameUtils.baseFilename(data["obj-result"].file);
-    } else if (data.file_name) {
-      return data.file_name;
-    } else {
-      // Generate a filename from the model type and parameters if not found
-      logger.warn('No filename found in response, generating one', { data });
-      return filenameUtils.generateModelFilename(modelType, params);
-    }
+/**
+ * Extract filename from the model generation response
+ * @param {Object} data - Response data
+ * @param {string} modelType - Type of model
+ * @param {Object} params - Model parameters
+ * @returns {string} Extracted or generated filename
+ */
+extractFileName(data, modelType, params) {
+  // Check all possible paths where the filename could be returned
+  if (data.obj_path) {
+    return filenameUtils.baseFilename(data.obj_path);
+  } else if (data["obj-path"]) {
+    return filenameUtils.baseFilename(data["obj-path"]);
+  } else if (data.obj_result && data.obj_result.file) {
+    return filenameUtils.baseFilename(data.obj_result.file);
+  } else if (data["obj-result"] && data["obj-result"].file) {
+    return filenameUtils.baseFilename(data["obj-result"].file);
+  } else if (data.file_name) {
+    return filenameUtils.baseFilename(data.file_name);
+  } else {
+    // Generate a filename from the model type and parameters if not found
+    logger.warn('No filename found in response, generating one', { data });
+    return filenameUtils.generateModelFilename(modelType, params);
   }
+}
   
   /**
    * Get a fallback schema for when API is unavailable

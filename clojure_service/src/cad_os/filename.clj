@@ -48,6 +48,38 @@
                    :model-type (first parts)})
     (first parts)))
 
+(defn encode-param-value
+  "Encode a parameter value for use in a filename.
+   Replaces special characters like dots, slashes, etc."
+  [value]
+  (cond
+    (nil? value) ""
+    (number? value) (-> (str value)
+                        (str/replace "." "_dot_"))
+    (string? value) (-> value
+                        (str/replace "." "_dot_")
+                        (str/replace "/" "_slash_")
+                        (str/replace "\\" "_backslash_"))
+    :else (str value)))
+
+(defn decode-param-value
+  "Decode a parameter value from a filename string.
+   Converts encoded special chars back to original form
+   and attempts to parse numbers when appropriate."
+  [value-str]
+  (when value-str
+    (let [decoded (-> value-str
+                      (str/replace "_dot_" ".")
+                      (str/replace "_slash_" "/")
+                      (str/replace "_backslash_" "\\"))]
+      ;; Try to parse as number if applicable
+      (try
+        (if (str/includes? decoded ".")
+          (Double/parseDouble decoded)
+          (Long/parseLong decoded))
+        (catch NumberFormatException _
+          decoded)))))
+
 (defn generate-model-filename
   "Generate a standard filename for a model based on its type and parameters.
    Returns the base filename without extension.
@@ -64,8 +96,8 @@
                                          params))
         ;; Sort parameters by name to ensure consistent ordering
         sorted-params (sort (map (fn [[k v]] [(name k) v]) filtered-params))
-        ;; Format each parameter as key=value
-        param-strs (map (fn [[k v]] (str k "=" v)) sorted-params)
+        ;; Format each parameter as key=value with encoded values
+        param-strs (map (fn [[k v]] (str k "=" (encode-param-value v))) sorted-params)
         ;; Join with underscores
         param-str (str/join "_" param-strs)
 
@@ -87,8 +119,10 @@
 
     (if param-pairs
       (reduce (fn [acc pair]
-                (let [[k v] (str/split pair #"=")]
-                  (assoc acc (keyword k) v)))
+                (if (str/includes? pair "=")
+                  (let [[k v] (str/split pair #"=")]
+                    (assoc acc (keyword k) (decode-param-value v)))
+                  acc))
               {}
               param-pairs)
       {})))

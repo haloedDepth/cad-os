@@ -185,14 +185,17 @@ export const generateModel = withErrorHandling(async function(modelType, params)
  */
 export function downloadModel(fileName, format) {
   try {
+    // Ensure we're using the base filename
+    const baseName = filenameUtils.baseFilename(fileName);
+    
     // Create a download link with the correctly formatted URL
-    const downloadUrl = `/api/models/${fileName}/${format}`;
-    logger.info(`Downloading model: ${fileName} in format: ${format}`, { url: downloadUrl });
+    const downloadUrl = `/api/models/${baseName}/${format}`;
+    logger.info(`Downloading model: ${baseName} in format: ${format}`, { url: downloadUrl });
     
     // Create and click a temporary link
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = filenameUtils.withExtension(fileName, format);
+    link.download = filenameUtils.withExtension(baseName, format);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

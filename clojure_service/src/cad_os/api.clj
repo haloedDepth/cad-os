@@ -10,6 +10,7 @@
             [cad-os.render :as render]
             [cad-os.utils.logger :as logger]
             [cad-os.utils.errors :as errors]
+            [cad-os.filename :as filename] ; Added filename namespace
             [clojure.string :as str])
   (:gen-class))
 
@@ -67,11 +68,10 @@
   "Get a model file in the specified format with improved error handling"
   [filename format]
   ((:info log) "Handling get-model-file request" {:filename filename :format format})
-  (let [base-name (if (.endsWith filename ".obj")
-                    (clojure.string/replace filename #"\.obj$" "")
-                    filename)
+  (let [base-name (filename/base-filename filename) ; Use base-filename
         format-keyword (keyword format)
-        result (formats/ensure-format base-name format-keyword)]
+        full-filename (filename/with-extension base-name format-keyword); Use with-extension
+        result (formats/ensure-format full-filename format-keyword)] ; Use the generated full_filename
 
     ((:debug log) "Format conversion result" {:result result})
 
@@ -85,10 +85,10 @@
                                                 (.getName file) "\"")}
            :body file}
           (errors/not-found-error (str "File not found: " (.getAbsolutePath file))
-                                  {:filename filename
+                                  {:filename full-filename ; Use full filename
                                    :format format})))
       (errors/server-error (:message result)
-                           {:filename filename
+                           {:filename full-filename ; Use full filename
                             :format format}))))
 
 (defroutes app-routes
@@ -139,32 +139,29 @@
   ;; Original model endpoint
   (GET "/models/:filename" [filename]
     ((:info log) "Handling model request with default format" {:filename filename})
-    (let [obj-file (io/file (if (.endsWith filename ".obj")
-                              filename
-                              (str filename ".obj")))]
+    (let [base-name (filename/base-filename filename) ; Use base-filename
+          obj-filename (filename/with-extension base-name :obj) ; Use with-extension
+          obj-file (io/file obj-filename)]
       ((:debug log) "Looking for file" {:path (.getAbsolutePath obj-file)})
       (if (.exists obj-file)
         {:status 200
          :headers {"Content-Type" "application/octet-stream"
-                   "Content-Disposition" (str "attachment; filename=\""
-                                              (if (.endsWith filename ".obj")
-                                                filename
-                                                (str filename ".obj"))
-                                              "\"")}
+                   "Content-Disposition" (str "attachment; filename=\"" obj-filename "\"")} ; Use obj-filename
          :body obj-file}
         (errors/not-found-error (str "File not found: " (.getAbsolutePath obj-file))
-                                {:filename filename}))))
+                                {:filename obj-filename})))) ;Use obj-filename
 
   ;; Endpoint for rendering with default view (front)
   (GET "/render/:filename" [filename :as request]
     ((:info log) "Handling render request with default view" {:filename filename})
     (try
-      (let [model-type (get-in request [:params :model_type])
+      (let [base-name (filename/base-filename filename)
+            model-type (get-in request [:params :model_type])
             size (get-in request [:params :size] 800)
             white-bg (get-in request [:params :white_background] true)
 
             ;; Create a temporary directory for rendering
-            output-dir (str "render_output/" filename)
+            output-dir (str "render_output/" base-name) ;Use base name
             _ (io/make-parents (str output-dir "/placeholder"))
 
             ;; Generate the view with default (front) view
@@ -180,25 +177,25 @@
 
             ;; Add fallback object names if none provided
             objects (if (empty? model-types)
-                      (let [inferred-type (first (str/split filename #"-"))]
+                      (let [inferred-type (first (str/split base-name #"-"))] ;Use base-name
                         [(or inferred-type "cylinder")])
                       model-types)
 
             _ ((:info log) "Rendering with objects" {:objects objects})
 
             result (render/generate-orbit-view
-                    filename
+                    base-name ;Use base-name
                     objects  ;; Better object handling
                     0  ;; Default azimuth for front view
                     30 ;; Default elevation for front view
-                    (str output-dir "/" filename "_front.png")
+                    (str output-dir "/" base-name "_front.png") ;Use base-name
                     render-options)]
 
         (if (= (:status result) "success")
           {:status 200
            :headers {"Content-Type" "image/png"
                      "Content-Disposition" (str "attachment; filename=\""
-                                                filename "_front.png\"")}
+                                                base-name "_front.png\"")} ;Use base-name
            :body (io/file (:file result))}
           (do
             ((:error log) "Error rendering model" {:result result})
@@ -214,7 +211,8 @@
   (GET "/render/:filename/:view" [filename view :as request]
     ((:info log) "Handling render request" {:filename filename :view view})
     (try
-      (let [model-type (get-in request [:params :model_type])
+      (let [base-name (filename/base-filename filename)
+            model-type (get-in request [:params :model_type])
             size (get-in request [:params :size] 800)
             white-bg (get-in request [:params :white_background] true)
 
@@ -222,7 +220,7 @@
             view-keyword (keyword view)
 
             ;; Create a temporary directory for rendering
-            output-dir (str "render_output/" filename)
+            output-dir (str "render_output/" base-name) ;Use base-name
             _ (io/make-parents (str output-dir "/placeholder"))
 
             ;; Generate the view
@@ -236,7 +234,7 @@
 
             ;; Add fallback object names if none provided
             objects (if (empty? model-types)
-                      (let [inferred-type (first (str/split filename #"-"))]
+                      (let [inferred-type (first (str/split base-name #"-"))] ;Use base-name
                         [(or inferred-type "cylinder")])
                       model-types)
 
@@ -245,54 +243,54 @@
             ;; Call the render function
             result (case view-keyword
                      :front (render/generate-orbit-view
-                             filename
+                             base-name
                              objects
                              0
                              30
-                             (str output-dir "/" filename "_front.png")
+                             (str output-dir "/" base-name "_front.png")
                              render-options)
                      :right (render/generate-orbit-view
-                             filename
+                             base-name
                              objects
                              90
                              30
-                             (str output-dir "/" filename "_right.png")
+                             (str output-dir "/" base-name "_right.png")
                              render-options)
                      :back (render/generate-orbit-view
-                            filename
+                            base-name
                             objects
                             180
                             30
-                            (str output-dir "/" filename "_back.png")
+                            (str output-dir "/" base-name "_back.png")
                             render-options)
                      :left (render/generate-orbit-view
-                            filename
+                            base-name
                             objects
                             270
                             30
-                            (str output-dir "/" filename "_left.png")
+                            (str output-dir "/" base-name "_left.png")
                             render-options)
                      :top (render/generate-orbit-view
-                           filename
+                           base-name
                            objects
                            0
                            90
-                           (str output-dir "/" filename "_top.png")
+                           (str output-dir "/" base-name "_top.png")
                            render-options)
                      ;; Default to front view
                      (render/generate-orbit-view
-                      filename
+                      base-name
                       objects
                       0
                       30
-                      (str output-dir "/" filename "_front.png")
+                      (str output-dir "/" base-name "_front.png")
                       render-options))]
 
         (if (= (:status result) "success")
           {:status 200
            :headers {"Content-Type" "image/png"
                      "Content-Disposition" (str "attachment; filename=\""
-                                                filename "_" (name view-keyword) ".png\"")}
+                                                base-name "_" (name view-keyword) ".png\"")} ;Use base-name
            :body (io/file (:file result))}
           (do
             ((:error log) "Error rendering view" {:result result})

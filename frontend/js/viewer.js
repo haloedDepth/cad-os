@@ -101,7 +101,7 @@ export function loadModel(fileName, onSuccess, onError) {
       logger.debug("Removed previous model from scene");
     }
     
-    // Ensure we're using the base filename and then add obj extension
+    // Ensure we're using the base filename
     const baseName = filenameUtils.baseFilename(fileName);
     const objFilePath = `/api/models/${baseName}/obj`;
     
