@@ -1,7 +1,9 @@
 (ns cad-os.filename
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
-            [cad-os.utils.logger :as logger]))
+            [cad-os.utils.logger :as logger])
+  (:import [java.security MessageDigest]
+           [java.util Base64]))
 
 ;; Initialize logger
 (def log (logger/get-logger))
@@ -69,6 +71,26 @@
                    :model-type (first parts)})
     (first parts)))
 
+;; New hash generation function
+(defn generate-hash-from-params
+  "Generate a short hash from model type and parameters for unique identification"
+  [model-type params]
+  (let [;; Sort parameters for consistent ordering, joining key=value pairs
+        sorted-params (sort (map (fn [[k v]] (str (name k) "=" v)) params))
+        ;; Create a string representation of model type and parameters
+        param-str (str model-type ":" (str/join ";" sorted-params))
+        ;; Generate SHA-256 hash
+        md (MessageDigest/getInstance "SHA-256")
+        hash-bytes (.digest md (.getBytes param-str "UTF-8"))
+        ;; Encode as base64 and take first 10 chars (for shorter filenames)
+        hash-encoded (-> (Base64/getEncoder)
+                         (.encodeToString hash-bytes)
+                         (str/replace #"[/\+=]" "_") ; Replace problematic chars
+                         (subs 0 10))]
+    ((:debug log) "Generated hash for parameters"
+                  {:model-type model-type :hash hash-encoded})
+    hash-encoded))
+
 (defn encode-param-value
   "Encode a parameter value for use in a filename.
    Replaces special characters like dots, slashes, etc."
@@ -101,33 +123,41 @@
         (catch NumberFormatException _
           decoded)))))
 
+;; Updated filename generation to use hash-based approach
 (defn generate-model-filename
   "Generate a standard filename for a model based on its type and parameters.
    Returns the base filename without extension.
-   Excludes position parameters as these are only relevant for assemblies."
+   Uses a hash of parameters to create shorter filenames."
   [model-type params]
   ((:debug log) "Generating model filename"
                 {:type model-type
                  :param-count (count params)})
-  (let [;; Filter out position parameters
-        filtered-params (into {} (remove (fn [[k _]]
+
+  ;; Filter out position parameters as these are only relevant for assemblies
+  (let [filtered-params (into {} (remove (fn [[k _]]
                                            (let [key-name (name k)]
                                              (or (str/starts-with? key-name "position")
                                                  (str/starts-with? key-name "position-"))))
                                          params))
-        ;; Sort parameters by name to ensure consistent ordering
-        sorted-params (sort (map (fn [[k v]] [(name k) v]) filtered-params))
-        ;; Format each parameter as key=value with encoded values
-        param-strs (map (fn [[k v]] (str k "=" (encode-param-value v))) sorted-params)
-        ;; Join with underscores
-        param-str (str/join "_" param-strs)
 
-        ;; Construct the full filename
-        filename (str model-type "-" param-str)]
+        ;; Generate hash for the parameters
+        param-hash (generate-hash-from-params model-type filtered-params)
+
+        ;; Create a parameter mapping filename for debugging/reference
+        param-map-str (str/join "_" (map (fn [[k v]]
+                                           (str (name k) "=" (encode-param-value v)))
+                                         (sort filtered-params)))
+
+        ;; Store this mapping in a metadata file if needed for debugging
+        ;; (could be implemented here)
+
+        ;; Construct the shorter filename with hash
+        filename (str model-type "-" param-hash)]
 
     ((:info log) "Generated filename" {:filename filename})
     filename))
 
+;; Keep existing parse-params-from-filename for legacy support
 (defn parse-params-from-filename
   "Extract parameters from a filename"
   [filename]
