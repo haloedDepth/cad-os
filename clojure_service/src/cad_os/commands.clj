@@ -1,213 +1,210 @@
 (ns cad-os.commands
   (:require [clojure.string :as str]
-            [cad-os.utils.logger :as logger]))
+            [cad-os.utils.logger :as logger]
+            [cad-os.math :as math]))
 
 ;; Initialize logger
 (def log (logger/get-logger))
 
-;; Helper functions
+;; Helper functions - this is now just an alias to maintain backward compatibility
 (defn vec->str
   "Convert a vector of numbers to space-separated string"
   [v]
-  (str/join " " v))
+  (str/join " " (map math/format-number v)))
 
 (defn point->str
   "Convert a 3D point vector to space-separated string"
-  [[x y z]]
-  (str x " " y " " z))
+  [point]
+  (math/point->str point))
 
 (defn create-point
-  "Create a 3D point from individual x, y, z coordinates.
-   This helps make code more explicit when creating points."
+  "Create a 3D point from individual x, y, z coordinates."
   [x y z]
-  [x y z])
+  (math/create-point x y z))
 
 (defn validate-point
   "Validate that v is a 3D point vector"
   [v]
-  (when-not (and (vector? v) (= (count v) 3) (every? number? v))
-    ((:error log) "Invalid point vector" {:point v})
-    (throw (Exception. (str "Expected a vector of 3 numbers [x y z], got: " v)))))
+  (math/validate-point v))
 
 (defn validate-points
   "Validate multiple 3D point vectors"
   [points]
-  (doseq [p points]
-    (validate-point p)))
+  (math/validate-points points))
 
 ;; Ellipsoids
 (defn insert-ellipsoid
   "Create ellipsoid using center and three vectors"
   [name center front right up]
-  (validate-points [center front right up])
+  (math/validate-points [center front right up])
   ((:debug log) "Inserting ellipsoid" {:name name})
   (str "in " name " ell "
-       (point->str center) " "
-       (point->str front) " "
-       (point->str right) " "
-       (point->str up)))
+       (math/point->str center) " "
+       (math/point->str front) " "
+       (math/point->str right) " "
+       (math/point->str up)))
 
 (defn insert-sphere
   "Create sphere using center point and radius"
   [name center radius]
-  (validate-point center)
+  (math/validate-point center)
   ((:debug log) "Inserting sphere" {:name name :radius radius})
-  (str "in " name " sph " (point->str center) " " radius))
+  (str "in " name " sph " (math/point->str center) " " (math/format-number radius)))
 
 (defn insert-ellipsoid-g
   "Create ellipsoid using two foci and axis length"
   [name focus1 focus2 axis-length]
-  (validate-points [focus1 focus2])
+  (math/validate-points [focus1 focus2])
   ((:debug log) "Inserting ellipsoid-g" {:name name})
   (str "in " name " ellg "
-       (point->str focus1) " "
-       (point->str focus2) " "
-       axis-length))
+       (math/point->str focus1) " "
+       (math/point->str focus2) " "
+       (math/format-number axis-length)))
 
 (defn insert-ellipsoid-1
   "Create ellipsoid using vertex, vector, and revolution radius"
   [name vertex vector-a radius-revolution]
-  (validate-points [vertex vector-a])
+  (math/validate-points [vertex vector-a])
   ((:debug log) "Inserting ellipsoid-1" {:name name})
   (str "in " name " ell1 "
-       (point->str vertex) " "
-       (point->str vector-a) " "
-       radius-revolution))
+       (math/point->str vertex) " "
+       (math/point->str vector-a) " "
+       (math/format-number radius-revolution)))
 
 (defn insert-elliptical-hyperboloid
   "Create elliptical hyperboloid"
   [name vertex vector-h vector-a magnitude-b apex-distance]
-  (validate-points [vertex vector-h vector-a])
+  (math/validate-points [vertex vector-h vector-a])
   ((:debug log) "Inserting elliptical hyperboloid" {:name name})
   (str "in " name " ehy "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       (point->str vector-a) " "
-       magnitude-b " " apex-distance))
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/point->str vector-a) " "
+       (math/format-number magnitude-b) " " (math/format-number apex-distance)))
 
 (defn insert-elliptical-paraboloid
   "Create elliptical paraboloid"
   [name vertex vector-h vector-a magnitude-b]
-  (validate-points [vertex vector-h vector-a])
+  (math/validate-points [vertex vector-h vector-a])
   ((:debug log) "Inserting elliptical paraboloid" {:name name})
   (str "in " name " epa "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       (point->str vector-a) " "
-       magnitude-b))
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/point->str vector-a) " "
+       (math/format-number magnitude-b)))
 
 ;; Cones and cylinders
 (defn insert-truncated-general-cone
   "Create truncated general cone"
   [name vertex vector-h vector-a vector-b magnitude-c magnitude-d]
-  (validate-points [vertex vector-h vector-a vector-b])
+  (math/validate-points [vertex vector-h vector-a vector-b])
   ((:debug log) "Inserting truncated general cone" {:name name})
   (str "in " name " tgc "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       (point->str vector-a) " "
-       (point->str vector-b) " "
-       magnitude-c " " magnitude-d))
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/point->str vector-a) " "
+       (math/point->str vector-b) " "
+       (math/format-number magnitude-c) " " (math/format-number magnitude-d)))
 
 (defn insert-right-circular-cylinder
   "Create right circular cylinder."
   [name position vector-h radius]
-  (validate-points [position vector-h])
+  (math/validate-points [position vector-h])
   ((:debug log) "Inserting right circular cylinder"
                 {:name name
                  :position position
                  :height vector-h
                  :radius radius})
   (str "in " name " rcc "
-       (point->str position) " "
-       (point->str vector-h) " "
-       radius))
+       (math/point->str position) " "
+       (math/point->str vector-h) " "
+       (math/format-number radius)))
 
 (defn insert-right-elliptical-cylinder
   "Create right elliptical cylinder"
   [name position vector-h radius]
-  (validate-points [position vector-h])
+  (math/validate-points [position vector-h])
   ((:debug log) "Inserting right elliptical cylinder" {:name name})
   (str "in " name " rec "
-       (point->str position) " "
-       (point->str vector-h) " "
-       radius))
+       (math/point->str position) " "
+       (math/point->str vector-h) " "
+       (math/format-number radius)))
 
 (defn insert-right-hyperbolic-cylinder
   "Create right hyperbolic cylinder"
   [name vertex vector-h vector-b rectangular-half-width apex-distance]
-  (validate-points [vertex vector-h vector-b])
+  (math/validate-points [vertex vector-h vector-b])
   ((:debug log) "Inserting right hyperbolic cylinder" {:name name})
   (str "in " name " rhc "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       (point->str vector-b) " "
-       rectangular-half-width " " apex-distance))
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/point->str vector-b) " "
+       (math/format-number rectangular-half-width) " " (math/format-number apex-distance)))
 
 (defn insert-right-parabolic-cylinder
   "Create right parabolic cylinder"
   [name vertex vector-h vector-b rectangular-half-width]
-  (validate-points [vertex vector-h vector-b])
+  (math/validate-points [vertex vector-h vector-b])
   ((:debug log) "Inserting right parabolic cylinder" {:name name})
   (str "in " name " rpc "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       (point->str vector-b) " "
-       rectangular-half-width))
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/point->str vector-b) " "
+       (math/format-number rectangular-half-width)))
 
 (defn insert-truncated-elliptical-cone
   "Create truncated elliptical cone"
   [name vertex vector-h vector-a vector-b]
-  (validate-points [vertex vector-h vector-a vector-b])
+  (math/validate-points [vertex vector-h vector-a vector-b])
   ((:debug log) "Inserting truncated elliptical cone" {:name name})
   (str "in " name " tec "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       (point->str vector-a) " "
-       (point->str vector-b)))
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/point->str vector-a) " "
+       (math/point->str vector-b)))
 
 (defn insert-truncated-right-circular-cone
   "Create truncated right circular cone"
   [name vertex vector-h radius-base radius-top]
-  (validate-points [vertex vector-h])
+  (math/validate-points [vertex vector-h])
   ((:debug log) "Inserting truncated right circular cone" {:name name})
   (str "in " name " trc "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       radius-base " " radius-top))
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/format-number radius-base) " " (math/format-number radius-top)))
 
 ;; Other solids
 (defn insert-torus
   "Create torus"
   [name center normal radius-revolution radius-tube]
-  (validate-points [center normal])
+  (math/validate-points [center normal])
   ((:debug log) "Inserting torus" {:name name})
   (str "in " name " tor "
-       (point->str center) " "
-       (point->str normal) " "
-       radius-revolution " " radius-tube))
+       (math/point->str center) " "
+       (math/point->str normal) " "
+       (math/format-number radius-revolution) " " (math/format-number radius-tube)))
 
 (defn insert-elliptical-torus
   "Create elliptical torus"
   [name center normal radius-revolution vector-c magnitude-semi-minor-axis]
-  (validate-points [center normal vector-c])
+  (math/validate-points [center normal vector-c])
   ((:debug log) "Inserting elliptical torus" {:name name})
   (str "in " name " eto "
-       (point->str center) " "
-       (point->str normal) " "
-       radius-revolution " "
-       (point->str vector-c) " "
-       magnitude-semi-minor-axis))
+       (math/point->str center) " "
+       (math/point->str normal) " "
+       (math/format-number radius-revolution) " "
+       (math/point->str vector-c) " "
+       (math/format-number magnitude-semi-minor-axis)))
 
 (defn insert-conical-particle
   "Create conical particle"
   [name vertex vector-h radius-v radius-h]
-  (validate-points [vertex vector-h])
+  (math/validate-points [vertex vector-h])
   ((:debug log) "Inserting conical particle" {:name name})
   (str "in " name " part "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       radius-v " " radius-h))
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/format-number radius-v) " " (math/format-number radius-h)))
 
 ;; Sketch segment formatting and validation
 (defn format-line-segment [[start end]]
@@ -235,7 +232,7 @@
 (defn format-arc-segment [[start end radius left-right orientation :as arc-params]]
   (let [validation (validate-arc-params arc-params)]
     (if (:valid validation)
-      (str "{carc S " start " E " end " R " radius " L " left-right " O " orientation "}")
+      (str "{carc S " start " E " end " R " (math/format-number radius) " L " left-right " O " orientation "}")
       (do
         ((:error log) "Invalid arc parameters"
                       {:errors (:errors validation)
@@ -247,7 +244,7 @@
   (if (and (number? degree)
            (>= degree 1)
            (<= degree (count points)))
-    (str "{bezier D " degree " P {" (str/join " " points) "}}")
+    (str "{bezier D " (math/format-number degree) " P {" (str/join " " points) "}}")
     (do
       ((:error log) "Invalid bezier parameters"
                     {:degree degree
@@ -311,15 +308,15 @@
 (defn insert-sketch
   "Create a sketch"
   [sketch-name v-point a-point b-point vertex-list segments]
-  (validate-points [v-point a-point b-point])
+  (math/validate-points [v-point a-point b-point])
   ((:debug log) "Inserting sketch" {:name sketch-name :vertex-count (count vertex-list)})
   (let [validation-result (validate-segments vertex-list segments)]
     (if (:valid validation-result)
       (str "put " sketch-name " sketch "
-           "V {" (point->str v-point) "} "
-           "A {" (point->str a-point) "} "
-           "B {" (point->str b-point) "} "
-           "VL { " (str/join " " (map #(str "{" (first %) " " (second %) "}") vertex-list)) " } "
+           "V {" (math/point->str v-point) "} "
+           "A {" (math/point->str a-point) "} "
+           "B {" (math/point->str b-point) "} "
+           "VL { " (str/join " " (map #(str "{" (math/format-number (first %)) " " (math/format-number (second %)) "}") vertex-list)) " } "
            "SL { " (str/join " " (map format-segment segments)) " }")
       (do
         ((:error log) "Sketch validation failed"
@@ -332,24 +329,24 @@
 (defn insert-sketch-revolve
   "Create a sketch revolve"
   [name vertex axis start angle sketch-name]
-  (validate-points [vertex axis start])
+  (math/validate-points [vertex axis start])
   ((:debug log) "Inserting sketch revolve" {:name name :sketch sketch-name})
   (str "in " name " revolve "
-       (point->str vertex) " "
-       (point->str axis) " "
-       (point->str start) " "
-       angle " " sketch-name))
+       (math/point->str vertex) " "
+       (math/point->str axis) " "
+       (math/point->str start) " "
+       (math/format-number angle) " " sketch-name))
 
 (defn insert-sketch-extrude
   "Create a sketch extrude"
   [name vertex vector-h vector-a vector-b sketch-name]
-  (validate-points [vertex vector-h vector-a vector-b])
+  (math/validate-points [vertex vector-h vector-a vector-b])
   ((:debug log) "Inserting sketch extrude" {:name name :sketch sketch-name})
   (str "in " name " extrude "
-       (point->str vertex) " "
-       (point->str vector-h) " "
-       (point->str vector-a) " "
-       (point->str vector-b) " "
+       (math/point->str vertex) " "
+       (math/point->str vector-h) " "
+       (math/point->str vector-a) " "
+       (math/point->str vector-b) " "
        sketch-name))
 
 ;; Boolean operations
@@ -377,10 +374,10 @@
                   {:expected expected-count
                    :actual (count vertices)})
     (throw (Exception. (str "Expected " expected-count " vertices, got " (count vertices)))))
-  (validate-points vertices))
+  (math/validate-points vertices))
 
 (defn vertices->string [vertices]
-  (str/join " " (mapcat point->str vertices)))
+  (str/join " " (map math/point->str vertices)))
 
 (defn insert-arb4
   "Create an ARB4 primitive with 4 vertices.
