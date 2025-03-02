@@ -1,6 +1,7 @@
 /**
  * Utilities for handling model filenames in the Discord bot
  */
+const crypto = require('crypto');
 
 // Map of formats to file extensions
 const FORMAT_EXTENSIONS = {
@@ -43,6 +44,30 @@ function withExtension(filename, format) {
 }
 
 /**
+ * Add a suffix to a filename before the extension
+ * @param {string} filename - Base filename
+ * @param {string} suffix - Suffix to add
+ * @returns {string} - Filename with suffix
+ */
+function withSuffix(filename, suffix) {
+  const base = baseFilename(filename);
+  return `${base}_${suffix}`;
+}
+
+/**
+ * Add a suffix to a filename and ensure it has the specified extension
+ * @param {string} filename - Base filename
+ * @param {string} suffix - Suffix to add
+ * @param {string} format - Format name
+ * @returns {string} - Filename with suffix and extension
+ */
+function withSuffixAndExtension(filename, suffix, format) {
+  const base = baseFilename(filename);
+  const ext = getExtension(format);
+  return `${base}_${suffix}.${ext}`;
+}
+
+/**
  * Extract model type from a filename
  * @param {string} filename - Filename to parse
  * @returns {string} - Model type
@@ -51,6 +76,30 @@ function extractModelType(filename) {
   const base = baseFilename(filename);
   const parts = base.split('-');
   return parts[0] || '';
+}
+
+/**
+ * Generate a hash from model parameters
+ * @param {string} modelType - Type of model
+ * @param {Object} params - Parameters for the model
+ * @returns {string} - Short hash string
+ */
+function generateHashFromParams(modelType, params) {
+  // Sort parameters for consistent ordering
+  const sortedEntries = Object.entries(params).sort(([a], [b]) => a.localeCompare(b));
+  
+  // Create a string representation of model type and parameters
+  const paramParts = sortedEntries.map(([key, value]) => `${key}=${value}`);
+  const paramString = `${modelType}:${paramParts.join(';')}`;
+  
+  // Generate SHA-256 hash
+  const hash = crypto.createHash('sha256').update(paramString).digest('base64');
+  
+  // Replace characters that might cause issues in filenames
+  const safeHash = hash.replace(/[\/\+=]/g, '_');
+  
+  // Return first 10 characters
+  return safeHash.substring(0, 10);
 }
 
 /**
@@ -93,7 +142,7 @@ function decodeParamValue(valueStr) {
 }
 
 /**
- * Generate a standardized filename for a model
+ * Generate a standardized filename for a model using hash-based approach
  * @param {string} modelType - Type of model
  * @param {Object} params - Parameters for the model
  * @returns {string} - Standardized filename without extension
@@ -106,20 +155,15 @@ function generateModelFilename(modelType, params) {
     )
   );
   
-  // Sort parameters for consistent ordering
-  const sortedParams = Object.entries(filteredParams).sort(([a], [b]) => a.localeCompare(b));
+  // Generate a hash based on model type and parameters
+  const paramHash = generateHashFromParams(modelType, filteredParams);
   
-  // Format parameters as key=value with encoded values
-  const paramStrs = sortedParams.map(([key, value]) => `${key}=${encodeParamValue(value)}`);
-  
-  // Join with underscores
-  const paramStr = paramStrs.join('_');
-  
-  return `${modelType}-${paramStr}`;
+  // Construct the shortened filename with hash
+  return `${modelType}-${paramHash}`;
 }
 
 /**
- * Parse parameters from a filename
+ * Parse parameters from a legacy filename (for backward compatibility)
  * @param {string} filename - Filename to parse
  * @returns {Object} - Extracted parameters
  */
@@ -149,9 +193,12 @@ module.exports = {
   getExtension,
   baseFilename,
   withExtension,
+  withSuffix,
+  withSuffixAndExtension,
   extractModelType,
   encodeParamValue,
   decodeParamValue,
   generateModelFilename,
-  parseParamsFromFilename
+  parseParamsFromFilename,
+  generateHashFromParams
 };

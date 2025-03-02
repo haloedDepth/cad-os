@@ -255,8 +255,13 @@ class CADService {
       
       logger.info(`Render successful for ${baseName}`, { status: response.status });
       
-      // Save the image temporarily
-      const tempImagePath = path.join(this.tempDir, `${baseName}_render.png`);
+      // Save the image temporarily using proper filename utilities
+      const renderSuffix = "render";
+      const tempImagePath = path.join(
+        this.tempDir, 
+        filenameUtils.withSuffixAndExtension(baseName, renderSuffix, "png")
+      );
+      
       fs.writeFileSync(tempImagePath, response.data);
       
       logger.debug(`Saved render to ${tempImagePath}`);

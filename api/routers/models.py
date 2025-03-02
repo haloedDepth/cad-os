@@ -97,7 +97,7 @@ async def get_model(filename: str):
     
     # Use obj as the default extension
     base_name = filename_utils.base_filename(filename)
-    file_name = f"{base_name}.obj"
+    file_name = filename_utils.with_extension(base_name, "obj")
     
     return Response(
         content=result["content"],
@@ -137,7 +137,7 @@ async def get_model_with_format(filename: str, format: str):
         )
     
     base_name = filename_utils.base_filename(filename)
-    file_name = f"{base_name}.{format_to_ext[format]}"
+    file_name = filename_utils.with_extension(base_name, format)
     
     return Response(
         content=result["content"],
