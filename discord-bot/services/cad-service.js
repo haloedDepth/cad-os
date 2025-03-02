@@ -26,6 +26,13 @@ class CADService {
       logger.info('Created temp directory', { path: this.tempDir });
     }
     
+    // Create a directory for different views if it doesn't exist
+    this.viewsDir = path.join(this.tempDir, 'views');
+    if (!fs.existsSync(this.viewsDir)) {
+      fs.mkdirSync(this.viewsDir, { recursive: true });
+      logger.info('Created views directory', { path: this.viewsDir });
+    }
+    
     // Cache for model schemas
     this.schemaCache = {};
   }
@@ -238,39 +245,49 @@ class CADService {
    * Render a model and get the image
    * @param {string} fileName - Filename of the model to render
    * @param {string} modelType - Type of the model
+   * @param {string} view - View angle (front, right, back, left, top)
    * @returns {Promise<string>} Path to the rendered image
    */
-  async renderModel(fileName, modelType) {
+  async renderModel(fileName, modelType, view = 'front') {
     try {
       // Ensure we're using just the base filename without extension
       const baseName = filenameUtils.baseFilename(fileName);
-      const url = `${this.apiBaseUrl}/render/${baseName}?model_type=${modelType}&view=front`;
       
-      logger.info(`Rendering model ${baseName}`, { modelType, url });
+      // Check if we've already rendered this view
+      const cachedImagePath = path.join(
+        this.viewsDir, 
+        `${baseName}_${view}.png`
+      );
+      
+      // If the image already exists, return the cached path
+      if (fs.existsSync(cachedImagePath)) {
+        logger.info(`Using cached render for ${baseName} view ${view}`, { path: cachedImagePath });
+        return cachedImagePath;
+      }
+      
+      // Otherwise, render the view
+      const url = `${this.apiBaseUrl}/render/${baseName}?model_type=${modelType}&view=${view}`;
+      
+      logger.info(`Rendering model ${baseName} with view ${view}`, { modelType, url });
       
       const response = await axios.get(url, { 
         responseType: 'arraybuffer',
         timeout: RENDER_TIMEOUT 
       });
       
-      logger.info(`Render successful for ${baseName}`, { status: response.status });
+      logger.info(`Render successful for ${baseName} view ${view}`, { status: response.status });
       
-      // Save the image temporarily using proper filename utilities
-      const renderSuffix = "render";
-      const tempImagePath = path.join(
-        this.tempDir, 
-        filenameUtils.withSuffixAndExtension(baseName, renderSuffix, "png")
-      );
+      // Save the image with the view in its name
+      fs.writeFileSync(cachedImagePath, response.data);
       
-      fs.writeFileSync(tempImagePath, response.data);
+      logger.debug(`Saved render to ${cachedImagePath}`);
       
-      logger.debug(`Saved render to ${tempImagePath}`);
-      
-      return tempImagePath;
+      return cachedImagePath;
     } catch (error) {
-      this.handleApiError(error, `Failed to render model: ${fileName}`, {
+      this.handleApiError(error, `Failed to render model: ${fileName} with view ${view}`, {
         fileName,
         modelType,
+        view,
         url: `${this.apiBaseUrl}/render/${fileName}`
       });
       throw error;

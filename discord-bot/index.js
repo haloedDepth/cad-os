@@ -88,32 +88,58 @@ function setupEventHandlers() {
   
   // Interaction event
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    
-    const commandName = interaction.commandName;
-    logger.info(`Command received: ${commandName}`, {
-      userId: interaction.user.id,
-      guildId: interaction.guildId,
-      channelId: interaction.channelId
-    });
-    
-    const command = client.commands.get(commandName);
-    
-    if (!command) {
-      logger.warn(`No command matching ${commandName} was found`);
-      try {
-        // Even if we don't have a command, acknowledge the interaction
-        await interaction.reply({ 
-          content: `Command '${commandName}' not found.`, 
-          ephemeral: true 
-        });
-      } catch (error) {
-        logger.error(`Failed to reply to unknown command ${commandName}`, { error: error.message });
-      }
-      return;
-    }
-    
     try {
+      // Handle button interactions
+      if (interaction.isButton()) {
+        logger.info(`Button interaction received: ${interaction.customId}`, {
+          userId: interaction.user.id,
+          guildId: interaction.guildId,
+          channelId: interaction.channelId
+        });
+        
+        // Check if this is a view navigation button
+        if (interaction.customId.startsWith('view_')) {
+          const modelCommand = client.commands.get('model');
+          if (modelCommand && modelCommand.handleViewButtonInteraction) {
+            try {
+              await modelCommand.handleViewButtonInteraction(interaction);
+            } catch (error) {
+              logger.error(`Error handling view button interaction: ${error.message}`, { error: error.stack });
+            }
+          } else {
+            logger.warn('Model command or handler method not found');
+          }
+        }
+        
+        return;
+      }
+      
+      // Handle slash commands
+      if (!interaction.isChatInputCommand()) return;
+      
+      const commandName = interaction.commandName;
+      logger.info(`Command received: ${commandName}`, {
+        userId: interaction.user.id,
+        guildId: interaction.guildId,
+        channelId: interaction.channelId
+      });
+      
+      const command = client.commands.get(commandName);
+      
+      if (!command) {
+        logger.warn(`No command matching ${commandName} was found`);
+        try {
+          // Even if we don't have a command, acknowledge the interaction
+          await interaction.reply({ 
+            content: `Command '${commandName}' not found.`, 
+            ephemeral: true 
+          });
+        } catch (error) {
+          logger.error(`Failed to reply to unknown command ${commandName}`, { error: error.message });
+        }
+        return;
+      }
+      
       logger.debug(`Executing command: ${commandName}`);
       // Make sure to wrap the command execution in a try-catch
       await Promise.resolve(command.execute(interaction))
@@ -123,9 +149,9 @@ function setupEventHandlers() {
         });
     } catch (error) {
       try {
-        await handleCommandError(error, interaction, commandName);
+        await handleCommandError(error, interaction, interaction.commandName || 'unknown');
       } catch (handlerError) {
-        logger.error(`Error handler failed for ${commandName}`, { 
+        logger.error(`Error handler failed for ${interaction.commandName || 'unknown'}`, { 
           originalError: error.message, 
           handlerError: handlerError.message 
         });

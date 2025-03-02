@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const cadService = require('../services/cad-service');
 const logger = require('../utils/logger')('model-command');
 const { handleCommandError } = require('../utils/errorHandler');
@@ -86,6 +86,63 @@ async function initializeCommand() {
     logger.error('Failed to initialize dynamic model command', { error: error.stack });
     throw error;
   }
+}
+
+// Views available for navigation
+const VIEWS = {
+  FRONT: 'front',
+  RIGHT: 'right',
+  BACK: 'back',
+  LEFT: 'left',
+  TOP: 'top'
+};
+
+// Create navigation buttons for the model viewer
+function createViewButtons(fileName, modelType, currentView = VIEWS.FRONT) {
+  const row = new ActionRowBuilder();
+  
+  // Left button
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`view_${VIEWS.LEFT}_${fileName}_${modelType}`)
+      .setLabel('◀️ Left')
+      .setStyle(currentView === VIEWS.LEFT ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  
+  // Front button
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`view_${VIEWS.FRONT}_${fileName}_${modelType}`)
+      .setLabel('⬆️ Front')
+      .setStyle(currentView === VIEWS.FRONT ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  
+  // Right button
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`view_${VIEWS.RIGHT}_${fileName}_${modelType}`)
+      .setLabel('▶️ Right')
+      .setStyle(currentView === VIEWS.RIGHT ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  
+  // Back button
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`view_${VIEWS.BACK}_${fileName}_${modelType}`)
+      .setLabel('⬇️ Back')
+      .setStyle(currentView === VIEWS.BACK ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  
+  // Add a second row for top view
+  const row2 = new ActionRowBuilder();
+  row2.addComponents(
+    new ButtonBuilder()
+      .setCustomId(`view_${VIEWS.TOP}_${fileName}_${modelType}`)
+      .setLabel('🔝 Top')
+      .setStyle(currentView === VIEWS.TOP ? ButtonStyle.Primary : ButtonStyle.Secondary)
+  );
+  
+  return [row, row2];
 }
 
 module.exports = {
@@ -209,21 +266,25 @@ module.exports = {
         // Try to render the model and get an image
         try {
           logger.info('Attempting to render the model', { fileName });
-          const imagePath = await cadService.renderModel(fileName, modelType);
+          const imagePath = await cadService.renderModel(fileName, modelType, VIEWS.FRONT);
           logger.info('Rendering successful', { imagePath });
           
-          // Send the rendered image
-          const attachment = new AttachmentBuilder(imagePath, { name: `${modelType}_render.png` });
+          // Create view navigation buttons
+          const buttons = createViewButtons(fileName, modelType, VIEWS.FRONT);
+          
+          // Send the rendered image with navigation buttons
+          const attachment = new AttachmentBuilder(imagePath, { name: `${modelType}_${VIEWS.FRONT}.png` });
           
           if (isInteractionDeferred) {
             await interaction.editReply({
               content: `${modelType} model generated successfully!\n` +
                       `Parameters:\n${paramList}`,
-              files: [attachment]
+              files: [attachment],
+              components: buttons
             });
           }
           
-          logger.info('Sent message with rendered image');
+          logger.info('Sent message with rendered image and navigation buttons');
         } catch (renderError) {
           logger.warn('Rendering failed, sending text-only response', { 
             error: renderError.message 
@@ -267,4 +328,66 @@ module.exports = {
       }
     }
   },
+  
+  // Handle button interactions for view navigation
+  async handleViewButtonInteraction(interaction) {
+    const customId = interaction.customId;
+    logger.info(`View button clicked: ${customId}`);
+    
+    // Parse the custom ID to get the view type, filename, and model type
+    // Format: view_<view>_<filename>_<modelType>
+    const parts = customId.split('_');
+    
+    if (parts.length < 4) {
+      logger.error(`Invalid button custom ID: ${customId}`);
+      await interaction.reply({ content: 'Invalid button interaction', ephemeral: true });
+      return;
+    }
+    
+    const viewType = parts[1];
+    const fileName = parts[2];
+    // Model type could contain underscores, so we join all remaining parts
+    const modelType = parts.slice(3).join('_');
+    
+    logger.info(`Changing view to ${viewType} for ${fileName}`, { modelType });
+    
+    try {
+      // Defer the update to avoid interaction timeout
+      await interaction.deferUpdate();
+      
+      // Render the requested view
+      const imagePath = await cadService.renderModel(fileName, modelType, viewType);
+      
+      // Create updated buttons with the new selected view
+      const buttons = createViewButtons(fileName, modelType, viewType);
+      
+      // Get the original message content
+      const originalMessage = interaction.message;
+      const content = originalMessage.content;
+      
+      // Create a new attachment with the new view
+      const attachment = new AttachmentBuilder(imagePath, { name: `${modelType}_${viewType}.png` });
+      
+      // Update the message with the new view
+      await interaction.editReply({
+        content: content,
+        files: [attachment],
+        components: buttons
+      });
+      
+      logger.info(`View changed to ${viewType} successfully`);
+    } catch (error) {
+      logger.error(`Error changing view: ${error.message}`, { error: error.stack });
+      
+      // Try to notify the user about the error without disrupting the UI
+      try {
+        await interaction.followUp({
+          content: `Error changing view: ${error.message}`,
+          ephemeral: true
+        });
+      } catch (followUpError) {
+        logger.error(`Failed to send error message: ${followUpError.message}`);
+      }
+    }
+  }
 };
