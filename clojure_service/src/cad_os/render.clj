@@ -45,7 +45,7 @@
    ((:info log) "Rendering model" {:file file-path :objects objects})
    (let [base-path (filename/base-filename file-path)
          g-file (filename/with-extension base-path :g)
-         default-output-file (str base-path ".png")
+         default-output-file (filename/with-extension base-path "png")
          output-file (or (:output-file options) default-output-file)
 
          ;; Ensure the output directory exists
@@ -131,34 +131,41 @@
 
 (defn generate-orbit-view
   "Generate a single orbit view with specified azimuth and elevation angles."
-  [file-path objects azimuth elevation output-file & [extra-options]]
+  [file-path objects azimuth elevation output-dir base-name & [extra-options]]
   ((:info log) "Generating orbit view"
                {:file file-path
                 :azimuth azimuth
                 :elevation elevation
-                :output output-file})
+                :output-dir output-dir
+                :base-name base-name})
 
-  ;; Ensure the output directory exists
-  (ensure-directory-exists output-file)
+  ;; Create the output filename using proper utilities
+  (let [view-name (if (and (= azimuth 0) (= elevation 30))
+                    "front"
+                    (format "az%d_el%d" azimuth elevation))
+        output-file (str output-dir "/" (filename/with-suffix-and-extension base-name view-name "png"))]
 
-  ;; Check if g-file exists
-  (let [g-file (filename/with-extension file-path :g)
-        g-file-obj (io/file g-file)]
-    (if (not (.exists g-file-obj))
-      (do
-        ((:error log) "G file does not exist" {:g-file g-file})
-        {:status "error"
-         :message (str "G file does not exist: " g-file)})
+    ;; Ensure the output directory exists
+    (ensure-directory-exists output-file)
 
-      ;; Proceed with rendering
-      (let [view-options (merge
-                          {:azimuth azimuth
-                           :elevation elevation
-                           :output-file output-file
-                           :white-background true
-                           :size 800}
-                          extra-options)]
-        (render-model file-path (if (empty? objects) ["cylinder"] objects) view-options)))))
+    ;; Check if g-file exists
+    (let [g-file (filename/with-extension file-path :g)
+          g-file-obj (io/file g-file)]
+      (if (not (.exists g-file-obj))
+        (do
+          ((:error log) "G file does not exist" {:g-file g-file})
+          {:status "error"
+           :message (str "G file does not exist: " g-file)})
+
+        ;; Proceed with rendering
+        (let [view-options (merge
+                            {:azimuth azimuth
+                             :elevation elevation
+                             :output-file output-file
+                             :white-background true
+                             :size 800}
+                            extra-options)]
+          (render-model file-path (if (empty? objects) ["cylinder"] objects) view-options))))))
 
 (defn generate-standard-views
   "Generate the four standard views (front, right, back, left) for a model."
@@ -175,18 +182,17 @@
                         {:name "back" :azimuth 180 :elevation 30}
                         {:name "left" :azimuth 270 :elevation 30}]]
     (doseq [view standard-views]
-      (let [output-file (format "%s/%s_%s.png"
-                                output-dir
-                                base-name
-                                (:name view))]
+      (let [view-suffix (:name view)
+            output-file (str output-dir "/" (filename/with-suffix-and-extension base-name view-suffix "png"))]
         ((:debug log) "Generating view" {:name (:name view) :output output-file})
         (generate-orbit-view
          file-path
          objects
          (:azimuth view)
          (:elevation view)
-         output-file
-         options)))))
+         output-dir
+         base-name
+         (merge options {:output-file output-file}))))))
 
 (defn generate-orbit-views
   "Generate a complete set of orbit views around a model."
@@ -207,19 +213,17 @@
   ;; Generate each view
   (doseq [azimuth azimuths
           elevation elevations]
-    (let [output-file (format "%s/%s_az%d_el%d.png"
-                              output-dir
-                              base-name
-                              azimuth
-                              elevation)]
+    (let [view-suffix (format "az%d_el%d" azimuth elevation)
+          output-file (str output-dir "/" (filename/with-suffix-and-extension base-name view-suffix "png"))]
       ((:debug log) "Generating view" {:azimuth azimuth :elevation elevation})
       (generate-orbit-view
        file-path
        objects
        azimuth
        elevation
-       output-file
-       render-options))))
+       output-dir
+       base-name
+       (merge render-options {:output-file output-file})))))
 
 (defn generate-orbit-animation-frames
   "Generate a sequence of frames for animating orbit rotation."
@@ -245,15 +249,14 @@
     ;; Generate each frame
     (doseq [frame (range frame-count)]
       (let [azimuth (+ start-azimuth (* frame azimuth-step))
-            output-file (format "%s/%s_frame%03d.png"
-                                output-dir
-                                base-name
-                                frame)]
+            frame-suffix (format "frame%03d" frame)
+            output-file (str output-dir "/" (filename/with-suffix-and-extension base-name frame-suffix "png"))]
         ((:debug log) "Generating frame" {:frame frame :azimuth azimuth})
         (generate-orbit-view
          file-path
          objects
          azimuth
          elevation
-         output-file
-         render-options)))))
+         output-dir
+         base-name
+         (merge render-options {:output-file output-file}))))))

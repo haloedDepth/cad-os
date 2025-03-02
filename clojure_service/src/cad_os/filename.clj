@@ -38,6 +38,27 @@
                    :extension ext})
     (str base "." ext)))
 
+(defn with-suffix
+  "Add a suffix to a filename before the extension"
+  [filename suffix]
+  (let [base (base-filename filename)]
+    ((:debug log) "Adding suffix to filename"
+                  {:filename base
+                   :suffix suffix})
+    (str base "_" suffix)))
+
+(defn with-suffix-and-extension
+  "Add a suffix to a filename and ensure it has the specified extension"
+  [filename suffix format]
+  (let [base (base-filename filename)
+        ext (get-extension format)]
+    ((:debug log) "Adding suffix and extension to filename"
+                  {:filename base
+                   :suffix suffix
+                   :format format
+                   :extension ext})
+    (str base "_" suffix "." ext)))
+
 (defn extract-model-type
   "Extract model type from a filename"
   [filename]
