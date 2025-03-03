@@ -322,6 +322,7 @@
   ((:info log) "Loading model namespaces")
   (require 'cad-os.models.washer)
   (require 'cad-os.models.cylinder)
+  (require 'cad-os.models.cylinder-with-ring)
 
   ;; Create necessary directories for rendering
   (io/make-parents "render_output/placeholder")
