@@ -97,7 +97,8 @@ async def generate_model(model_type: str, params: Dict[str, Any]):
             
         logger.debug(f"Converted parameters: {converted_params}")
         
-        async with httpx.AsyncClient() as client:
+        # Use an increased timeout for complex model generation (30 seconds)
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{CLOJURE_SERVICE_URL}/generate/{model_type}",
                 json=converted_params
