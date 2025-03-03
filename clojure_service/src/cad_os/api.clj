@@ -324,6 +324,7 @@
   (require 'cad-os.models.cylinder)
   (require 'cad-os.models.cylinder-with-ring)
   (require 'cad-os.models.tapered-tube)
+  (require 'cad-os.models.vacuum-hose-adapter)
 
   ;; Create necessary directories for rendering
   (io/make-parents "render_output/placeholder")
