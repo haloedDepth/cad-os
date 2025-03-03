@@ -6,22 +6,22 @@
 ;; Initialize logger
 (def log (logger/get-logger))
 
-;; Schema definition for hollow cylinder
+;; Schema definition for hollow cylinder with new parameters
 (def hollow-cylinder-schema
   {:name "Hollow Cylinder"
-   :description "A simple hollow cylinder (ring) with inner and outer diameters"
+   :description "A simple hollow cylinder (ring) with diameter, height, and wall thickness"
    :parameters
-   [{:name "outer-diameter"
+   [{:name "diameter"
      :type "number"
      :description "Outer diameter of the hollow cylinder"
      :default 10.0}
-    {:name "inner-diameter"
+    {:name "height"
      :type "number"
-     :description "Inner diameter of the hollow cylinder"
-     :default 6.0}
+     :description "Height of the hollow cylinder"
+     :default 2.0}
     {:name "thickness"
      :type "number"
-     :description "Thickness of the hollow cylinder"
+     :description "Wall thickness (difference between outer and inner diameter)"
      :default 2.0}
     ;; Optional position parameters (hidden from UI by default)
     {:name "position-x"
@@ -40,38 +40,42 @@
      :default 0.0
      :hidden true}]
 
-   ;; Validation rules using expressions
+   ;; Updated validation rules
    :validation-rules
-   [{:expr "outer-diameter > 0.1"
+   [{:expr "diameter > 0.1"
      :message "Outer diameter must be greater than 0.1"}
-    {:expr "inner-diameter > 0.1"
-     :message "Inner diameter must be greater than 0.1"}
+    {:expr "height > 0.1"
+     :message "Height must be greater than 0.1"}
     {:expr "thickness > 0.1"
-     :message "Thickness must be greater than 0.1"}
-    {:expr "inner-diameter < outer-diameter"
-     :message "Inner diameter must be less than outer diameter"}]})
+     :message "Wall thickness must be greater than 0.1"}
+    {:expr "thickness < (diameter / 2)"
+     :message "Wall thickness must be less than radius (half of diameter)"}]})
 
 ;; Command generator function for hollow cylinder
 (defn generate-hollow-cylinder-commands
-  "Generate commands to create a hollow cylinder model"
+  "Generate commands to create a hollow cylinder model with the new parametrization"
   [params]
-  (let [outer-diameter (get params :outer-diameter)
-        inner-diameter (get params :inner-diameter)
+  (let [diameter (get params :diameter)
+        height (get params :height)
         thickness (get params :thickness)
         position-x (get params :position-x 0)
         position-y (get params :position-y 0)
-        position-z (get params :position-z 0)]
+        position-z (get params :position-z 0)
+
+        ;; Calculate inner diameter from diameter and thickness
+        inner-diameter (- diameter (* 2 thickness))]
 
     ((:info log) "Generating hollow cylinder commands"
-                 {:outer outer-diameter
-                  :inner inner-diameter
+                 {:diameter diameter
+                  :height height
                   :thickness thickness
+                  :inner-diameter inner-diameter
                   :position [position-x position-y position-z]})
 
     [(commands/insert-right-circular-cylinder
-      "outer" [position-x position-y position-z] [0 0 thickness] (/ outer-diameter 2))
+      "outer" [position-x position-y position-z] [0 0 height] (/ diameter 2))
      (commands/insert-right-circular-cylinder
-      "inner" [position-x position-y position-z] [0 0 thickness] (/ inner-diameter 2))
+      "inner" [position-x position-y position-z] [0 0 height] (/ inner-diameter 2))
      (commands/subtraction "hollow-cylinder" "outer" "inner")]))
 
 ;; Register the hollow cylinder model

@@ -323,6 +323,7 @@
   (require 'cad-os.models.hollow-cylinder)
   (require 'cad-os.models.cylinder)
   (require 'cad-os.models.cylinder-with-ring)
+  (require 'cad-os.models.tapered-tube)
 
   ;; Create necessary directories for rendering
   (io/make-parents "render_output/placeholder")

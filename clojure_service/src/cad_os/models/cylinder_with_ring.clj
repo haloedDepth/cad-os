@@ -85,7 +85,7 @@
         ;; Calculate actual ring position based on percentage
         ring-z-position (+ position-z (* (/ ring-placement 100) cylinder-height))
 
-        ;; Create component specifications - properly reusing BOTH components
+        ;; Create component specifications
         cylinder-spec {:type "cylinder"
                        :name "main-cylinder"
                        :params {:radius (/ cylinder-diameter 2)
@@ -94,12 +94,13 @@
                                 :position-y position-y
                                 :position-z position-z}}
 
-        ;; Create a hollow cylinder with proper parameters - using hollow-cylinder instead of washer
+        ;; Create a hollow cylinder with updated parameters to match new schema
+        ring-outer-diameter (+ cylinder-diameter (* 2 ring-overhang) (* 2 ring-thickness))
         ring-spec {:type "hollow-cylinder"
                    :name "ring"
-                   :params {:inner-diameter (+ cylinder-diameter (* 2 ring-overhang))
-                            :outer-diameter (+ cylinder-diameter (* 2 ring-overhang) (* 2 ring-thickness))
-                            :thickness ring-height  ; This is the height of the ring
+                   :params {:diameter ring-outer-diameter     ;; Using new parameter name - outer diameter
+                            :thickness ring-thickness         ;; Using new meaning - wall thickness
+                            :height ring-height               ;; Using new parameter name - height instead of thickness
                             :position-x position-x
                             :position-y position-y
                             :position-z (- ring-z-position (/ ring-height 2))}}]
@@ -111,10 +112,10 @@
                   :ring-z-position ring-z-position
                   :ring-radial-thickness ring-thickness
                   :ring-height ring-height
-                  :ring-overhang ring-overhang})
+                  :ring-overhang ring-overhang
+                  :ring-outer-diameter ring-outer-diameter})
 
     ;; Use the assembly function to create the complete assembly
-    ;; This ensures BOTH components are properly reused
     (assembly/create-assembly "cylinder-with-ring" [cylinder-spec ring-spec])))
 
 ;; Register the cylinder with ring model
