@@ -10,7 +10,7 @@
 ;; Schema definition for cylinder with ring
 (def cylinder-with-ring-schema
   {:name "Cylinder with Ring"
-   :description "A cylinder with a washer (ring) positioned along its height"
+   :description "A cylinder with a hollow cylinder (ring) positioned along its height"
    :parameters
    [{:name "cylinder-height"
      :type "number"
@@ -94,15 +94,15 @@
                                 :position-y position-y
                                 :position-z position-z}}
 
-        ;; Create a washer with proper parameters - reusing the washer component
-        washer-spec {:type "washer"
-                     :name "ring"
-                     :params {:inner-diameter (+ cylinder-diameter (* 2 ring-overhang))
-                              :outer-diameter (+ cylinder-diameter (* 2 ring-overhang) (* 2 ring-thickness))
-                              :thickness ring-height  ; This is the height of the washer
-                              :position-x position-x
-                              :position-y position-y
-                              :position-z (- ring-z-position (/ ring-height 2))}}]
+        ;; Create a hollow cylinder with proper parameters - using hollow-cylinder instead of washer
+        ring-spec {:type "hollow-cylinder"
+                   :name "ring"
+                   :params {:inner-diameter (+ cylinder-diameter (* 2 ring-overhang))
+                            :outer-diameter (+ cylinder-diameter (* 2 ring-overhang) (* 2 ring-thickness))
+                            :thickness ring-height  ; This is the height of the ring
+                            :position-x position-x
+                            :position-y position-y
+                            :position-z (- ring-z-position (/ ring-height 2))}}]
 
     ((:info log) "Generating cylinder with ring commands"
                  {:cylinder-height cylinder-height
@@ -115,7 +115,7 @@
 
     ;; Use the assembly function to create the complete assembly
     ;; This ensures BOTH components are properly reused
-    (assembly/create-assembly "cylinder-with-ring" [cylinder-spec washer-spec])))
+    (assembly/create-assembly "cylinder-with-ring" [cylinder-spec ring-spec])))
 
 ;; Register the cylinder with ring model
 (registry/register-model

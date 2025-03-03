@@ -320,7 +320,7 @@
 
   ;; These requires will trigger the registration
   ((:info log) "Loading model namespaces")
-  (require 'cad-os.models.washer)
+  (require 'cad-os.models.hollow-cylinder)
   (require 'cad-os.models.cylinder)
   (require 'cad-os.models.cylinder-with-ring)
 
